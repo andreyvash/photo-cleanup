@@ -8,6 +8,7 @@ export default function RootLayout() {
       <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal' }}>
         <Stack.Screen name="index" />
         <Stack.Screen name="asset/[id]" options={{ headerLargeTitleEnabled: false }} />
+        <Stack.Screen name="send" options={{ presentation: 'modal', headerShown: false }} />
         <Stack.Screen
           name="delete"
           options={{

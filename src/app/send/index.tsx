@@ -1,0 +1,155 @@
+import { useQuery } from '@tanstack/react-query';
+import { Image } from 'expo-image';
+import { Stack, useRouter } from 'expo-router';
+import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useShallow } from 'zustand/react/shallow';
+
+import { Button } from '@/components/button';
+import { GroupedRow, GroupedSection } from '@/components/grouped-list';
+import { formatCount } from '@/lib/format';
+import { useLibrary } from '@/library/library-store-provider';
+import { describeItems } from '@/library/selection';
+import { useSendSession, useTransferQueue } from '@/send/send-session';
+import { useService } from '@/services';
+import { colors, radius, spacing, tabularNumbers, type } from '@/theme';
+
+const THUMBNAILS = 8;
+
+export default function SendScreen() {
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const drive = useService('drive');
+  const queue = useTransferQueue();
+  const { selectedIds, sizes, items } = useLibrary(
+    useShallow((s) => ({ selectedIds: s.selectedIds, sizes: s.sizes, items: s.items })),
+  );
+  const session = useSendSession(
+    useShallow((s) => ({
+      status: s.status,
+      account: s.account,
+      signingIn: s.signingIn,
+      error: s.error,
+      folderId: s.folderId,
+      signIn: s.signIn,
+      signOut: s.signOut,
+      chooseFolder: s.chooseFolder,
+    })),
+  );
+
+  const folders = useQuery({
+    queryKey: ['drive-folders', session.account?.email],
+    queryFn: () => drive.listFolders(),
+    enabled: session.status === 'signedIn',
+  });
+  const folder = folders.data?.find((candidate) => candidate.id === session.folderId) ?? null;
+
+  function send() {
+    if (!folder) return;
+    const transferItems = selectedIds.map((id) => {
+      const item = items.find((candidate) => candidate.id === id);
+      return { id, filename: item?.filename ?? null, size: sizes[id] ?? null };
+    });
+    void queue.start(transferItems, { id: folder.id, name: folder.name });
+    router.replace('/send/progress');
+  }
+
+  return (
+    <>
+      <Stack.Toolbar placement="left">
+        <Stack.Toolbar.Button onPress={() => router.back()}>Cancel</Stack.Toolbar.Button>
+      </Stack.Toolbar>
+      <ScrollView contentInsetAdjustmentBehavior="automatic" contentContainerStyle={styles.content}>
+        <View style={styles.summary}>
+          <View style={styles.thumbnails}>
+            {selectedIds.slice(0, THUMBNAILS).map((id) => (
+              <Image key={id} source={{ uri: `ph://${id}` }} contentFit="cover" style={styles.thumbnail} />
+            ))}
+          </View>
+          <Text style={styles.summaryText}>{describeItems(selectedIds, sizes)}</Text>
+        </View>
+
+        {session.status === 'checking' ? <ActivityIndicator style={styles.loading} /> : null}
+
+        {session.status === 'signedOut' ? (
+          <View style={styles.signIn}>
+            <Text style={styles.body}>
+              Sign in to choose a folder in your Google Drive. Photo Cleanup can only see folders it creates — not the
+              rest of your Drive.
+            </Text>
+            <Button
+              title="Sign in with Google"
+              disabled={session.signingIn}
+              onPress={() => void session.signIn()}
+            />
+            {session.error ? (
+              <Text style={styles.error} accessibilityRole="alert">
+                {session.error}
+              </Text>
+            ) : null}
+          </View>
+        ) : null}
+
+        {session.status === 'signedIn' ? (
+          <>
+            <GroupedSection header="Folder" footer="Only folders created by Photo Cleanup are shown.">
+              {folders.isPending ? <GroupedRow title="Loading folders…" /> : null}
+              {folders.isError ? (
+                <GroupedRow
+                  title="Couldn’t load folders. Try Again"
+                  icon="arrow.clockwise"
+                  onPress={() => void folders.refetch()}
+                />
+              ) : null}
+              {folders.data?.length === 0 ? <GroupedRow title="No folders yet — create one below." /> : null}
+              {folders.data?.map((candidate) => (
+                <GroupedRow
+                  key={candidate.id}
+                  title={candidate.name}
+                  icon="folder"
+                  selected={candidate.id === session.folderId}
+                  onPress={() => session.chooseFolder(candidate.id)}
+                />
+              ))}
+              <GroupedRow
+                title="New Folder…"
+                icon="folder.badge.plus"
+                titleColor={colors.accent}
+                onPress={() => router.push('/send/new-folder')}
+              />
+            </GroupedSection>
+
+            <GroupedSection footer={`Signed in as ${session.account?.email}`}>
+              <GroupedRow title="Sign Out" titleColor={colors.accent} onPress={() => void session.signOut()} />
+            </GroupedSection>
+          </>
+        ) : null}
+      </ScrollView>
+
+      {session.status === 'signedIn' ? (
+        <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.s }]}>
+          <Text style={styles.footnote}>Copies go to Drive. Nothing is deleted from Photos.</Text>
+          <Button
+            title={`Send ${formatCount(selectedIds.length, 'Item', 'Items')}`}
+            disabled={!folder || selectedIds.length === 0}
+            onPress={send}
+          />
+        </View>
+      ) : null}
+    </>
+  );
+}
+
+const styles = StyleSheet.create({
+  content: { paddingVertical: spacing.l, gap: spacing.xl },
+  summary: { alignItems: 'center', gap: spacing.m, paddingHorizontal: spacing.l },
+  thumbnails: { flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap', justifyContent: 'center' },
+  thumbnail: { width: 44, height: 44, borderRadius: radius.thumb, borderCurve: 'continuous', backgroundColor: colors.placeholder },
+  summaryText: { ...type.headline, ...tabularNumbers, color: colors.label },
+  loading: { marginTop: spacing.xl },
+  signIn: { paddingHorizontal: spacing.xl, gap: spacing.l },
+  body: { ...type.subheadline, color: colors.secondaryLabel, textAlign: 'center' },
+  error: { ...type.footnote, color: colors.destructive, textAlign: 'center' },
+  footer: { paddingHorizontal: spacing.l, paddingTop: spacing.m, gap: spacing.s, backgroundColor: colors.groupedBackground },
+  footnote: { ...type.footnote, color: colors.secondaryLabel, textAlign: 'center' },
+});
