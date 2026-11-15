@@ -28,3 +28,11 @@ export function formatBytes(bytes: number | null): string {
 export function formatCount(count: number, singular: string, plural: string): string {
   return `${numberFormats[0].format(count)} ${count === 1 ? singular : plural}`;
 }
+
+export function formatDuration(seconds: number): string {
+  const total = Math.round(seconds);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = String(total % 60).padStart(2, '0');
+  return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${secs}` : `${minutes}:${secs}`;
+}

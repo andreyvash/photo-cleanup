@@ -56,7 +56,10 @@
   "jest": {
     "preset": "jest-expo",
     "transformIgnorePatterns": [
-      "node_modules/(?!((jest-)?react-native|@react-native(-community)?|@react-native-google-signin/.*)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@shopify/flash-list)"
+      "node_modules/(?!((jest-)?react-native|@react-native(-community)?|@react-native-google-signin/.*)|expo(nent)?|@expo(nent)?/.*|@expo-google-fonts/.*|react-navigation|@react-navigation/.*|@shopify/flash-list|standard-navigation)"
+    ],
+    "setupFiles": [
+      "./node_modules/@shopify/flash-list/jestSetup.js"
     ]
   }
 }

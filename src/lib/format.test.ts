@@ -1,4 +1,12 @@
-import { formatBytes, formatCount } from './format';
+import { formatBytes, formatCount, formatDuration } from './format';
+
+describe('formatDuration', () => {
+  it('reads like the Photos app: m:ss, or h:mm:ss for long videos', () => {
+    expect(formatDuration(10)).toBe('0:10');
+    expect(formatDuration(95.4)).toBe('1:35');
+    expect(formatDuration(3723)).toBe('1:02:03');
+  });
+});
 
 describe('formatBytes', () => {
   it('uses decimal units like iOS Settings, with one trimmed decimal', () => {
