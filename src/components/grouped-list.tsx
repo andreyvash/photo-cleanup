@@ -26,35 +26,28 @@ export function GroupedSection({ header, footer, children }: { header?: string; 
 export function GroupedRow({
   title,
   icon,
-  iconColor = colors.accent,
   titleColor = colors.label,
-  detail,
   selected,
   onPress,
-  disabled,
 }: {
   title: string;
   icon?: SFSymbol;
-  iconColor?: ColorValue;
   titleColor?: ColorValue;
-  detail?: string;
   selected?: boolean;
   onPress?: () => void;
-  disabled?: boolean;
 }) {
   return (
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={title}
-      accessibilityState={{ selected: !!selected, disabled: !!disabled }}
-      disabled={disabled || !onPress}
+      accessibilityState={{ selected: !!selected }}
+      disabled={!onPress}
       onPress={onPress}
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}>
-      {icon ? <SymbolView name={icon} size={20} tintColor={iconColor} style={styles.icon} /> : null}
+      {icon ? <SymbolView name={icon} size={20} tintColor={colors.accent} style={styles.icon} /> : null}
       <Text style={[styles.title, { color: titleColor }]} numberOfLines={1}>
         {title}
       </Text>
-      {detail ? <Text style={styles.detail}>{detail}</Text> : null}
       {selected ? <SymbolView name="checkmark" size={16} weight="semibold" tintColor={colors.accent} /> : null}
     </Pressable>
   );
@@ -70,5 +63,4 @@ const styles = StyleSheet.create({
   rowPressed: { backgroundColor: colors.fill },
   icon: { width: 24, height: 24 },
   title: { ...type.body, flex: 1 },
-  detail: { ...type.body, color: colors.secondaryLabel },
 });

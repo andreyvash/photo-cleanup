@@ -34,7 +34,7 @@ export default function NewFolderSheet() {
         accessibilityLabel="Folder name"
         autoFocus
         returnKeyType="done"
-        onSubmitEditing={() => trimmed && create.mutate(trimmed)}
+        onSubmitEditing={() => trimmed && !create.isPending && create.mutate(trimmed)}
         maxLength={120}
         style={styles.input}
         placeholderTextColor={colors.tertiaryLabel}

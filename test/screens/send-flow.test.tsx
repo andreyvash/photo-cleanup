@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { DriveError } from '@/drive/errors';
 import { ServicesProvider } from '@/services';
 
-import { FakeDriveClient, FakeExporter, FakeGoogleAuth } from '../support/fakeGoogle';
+import { FakeDriveClient, FakeGoogleAuth, InstantExporter } from '../support/fakeGoogle';
 import { FakePhotoLibrary, photo, video } from '../support/fakePhotoLibrary';
 
 type Setup = { signedInAs?: string | null; folders?: { id: string; name: string }[] };
@@ -14,7 +14,7 @@ async function openSendFor(ids: string[], { signedInAs = 'me@example.com', folde
   const library = new FakePhotoLibrary([photo('beach', 3_000_000), video('party', 40_000_000), photo('cat', 1_000_000)]);
   const googleAuth = new FakeGoogleAuth(signedInAs);
   const drive = new FakeDriveClient(folders.map((f) => ({ ...f, createdTime: '2026-11-01T00:00:00Z' })));
-  const exporter = new FakeExporter();
+  const exporter = new InstantExporter();
   const wrapper = ({ children }: { children: ReactNode }) => (
     <ServicesProvider services={{ photoLibrary: library, googleAuth, drive, exporter }}>{children}</ServicesProvider>
   );

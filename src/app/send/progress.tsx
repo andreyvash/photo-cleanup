@@ -21,7 +21,8 @@ const KEEP_AWAKE_TAG = 'send-to-drive';
 function statusText(status: TransferStatus | undefined): string {
   switch (status?.state) {
     case 'downloading':
-      return `Downloading from iCloud ${Math.round(status.progress * 100)}%`;
+      // PhotoKit only reports progress when it has to download from iCloud.
+      return status.progress > 0 ? `Downloading from iCloud ${Math.round(status.progress * 100)}%` : 'Preparing…';
     case 'uploading':
       return `Uploading ${Math.round(status.progress * 100)}%`;
     case 'sent':

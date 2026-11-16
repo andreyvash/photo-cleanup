@@ -155,7 +155,8 @@ export function createLibraryStore(library: PhotoLibrary, { sizeBatchSize = 500 
       clearSelection: () => set({ selectedIds: [] }),
       keepSelected: (ids) => set((state) => ({ selectedIds: state.selectedIds.filter((id) => ids.includes(id)) })),
       deleteSelected: async () => {
-        const ids = get().selectedIds;
+        const present = new Set(get().items.map((item) => item.id));
+        const ids = get().selectedIds.filter((id) => present.has(id));
         if (ids.length === 0) return 'cancelled';
         const outcome = await library.deleteItems(ids);
         if (outcome === 'deleted') {

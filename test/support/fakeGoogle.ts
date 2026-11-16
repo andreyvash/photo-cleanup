@@ -68,15 +68,9 @@ export class FakeDriveClient implements DriveClient {
   }
 }
 
-/** Stands in for the native Photos export; produces one file per item named after it. */
-export class FakeExporter implements Exporter {
-  readonly iCloudFailures = new Set<string>();
-  readonly discarded: string[] = [];
-
+/** Stands in for the native Photos export; produces one file per item named after it, instantly. */
+export class InstantExporter implements Exporter {
   async exportForUpload(itemId: string, onProgress: (fraction: number) => void) {
-    if (this.iCloudFailures.has(itemId)) {
-      throw Object.assign(new Error('Couldn’t download this item from iCloud.'), { code: 'ICLOUD_DOWNLOAD_FAILED' });
-    }
     onProgress(1);
     return {
       directory: `memory://${itemId}`,
@@ -84,7 +78,5 @@ export class FakeExporter implements Exporter {
     };
   }
 
-  async discard(directory: string) {
-    this.discarded.push(directory);
-  }
+  async discard() {}
 }
