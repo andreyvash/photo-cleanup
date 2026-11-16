@@ -8,7 +8,7 @@ An iPhone app for finding the photos and videos that take up the most space, the
 - **Send to Google Drive:** copies items into a folder the app created, with progress and status for each item and a retry for the ones that failed. The originals stay in Photos.
 - **Delete from Photos:** a review step comes first. Items go to Recently Deleted for 30 days, and with iCloud Photos on, they're deleted from your other devices too. Sending to Drive never deletes anything.
 
-Built with Expo SDK 58 (React Native 0.88), Expo Router, and a small local Swift module (`modules/photo-resources`). The module reads file sizes from PhotoKit and exports originals, including downloading from iCloud.
+Built with Expo SDK 58 (React Native 0.88), Expo Router, and a small local Swift module (`modules/photo-resources`). The module reads file sizes from PhotoKit and exports each item's files for upload, downloading from iCloud if needed.
 
 ## Run it
 
@@ -60,6 +60,9 @@ Google sign-in and real uploads can't be automated, because they need your accou
 
 ## Known limitations
 
+- **What gets copied is the version you see in Photos:** the edited version of an edited photo, plus a Live Photo's video. An edited photo's unedited original isn't copied, and neither is the RAW half of a RAW+JPEG pair. Deleting after sending loses those.
+- **Sizes and bytes sent can differ.** The size shown is everything Photos stores for an item, which is what deleting frees. The bytes sent to Drive can be less.
+- **Stop can't interrupt an iCloud download in progress.** That item is finished first, then discarded. You can close the screen meanwhile.
 - A size comes from PhotoKit's undocumented `fileSize` resource key. If Apple removes it, sizes show as "Size unavailable" rather than crashing.
 - Retrying a failed upload starts that file over. Partial uploads aren't resumed.
 - If only part of a Live Photo made it to Drive (the photo but not its video), a retry uploads the photo again.
