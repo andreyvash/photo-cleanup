@@ -76,7 +76,8 @@ Path: @/
 - Sizes come from PhotoKit's undocumented `fileSize` key. If Apple removes it, sizes show as "Size unavailable" and nothing crashes.
 - Temp exports left behind by a killed session are removed at app launch: `createExpoPhotoLibrary()` (`@/src/library`) calls `PhotoResources.clearExports()`. The root layout creates it, before any transfer can be running.
 - Known limitations:
-  - Retrying a Live Photo whose first file already landed can duplicate that file in Drive.
+  - Retrying an item whose first files already landed (an edited photo's original, a Live Photo's still) duplicates those files in Drive.
+  - Photos' edit record isn't copied: Drive gets the original and the edited version as separate files.
   - `stop()` waits for an export that's in progress to finish.
   - The transfer queue isn't saved if the app is killed.
   - `listFolders` reads only the first page, up to 1000 folders.

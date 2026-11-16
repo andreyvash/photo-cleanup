@@ -10,6 +10,7 @@ Path: @/modules/photo-resources
 - It sits under the services boundary in `@/src/services.tsx`, and no screen or store calls it directly. Two adapters wrap it:
   - `@/src/library/expo-photo-library.ts` uses `getSizes` to implement `PhotoLibrary.getSizes`, and calls `clearExports` once when it's created at app launch.
   - `@/src/transfer/photo-exporter.ts` uses `exportForUpload` and the `onExportProgress` event to implement the `Exporter` interface.
+- `@/src/transfer/upload-files.ts` imports only its types (`ExportedResource`, `ResourceType`).
 - Both adapters import it by relative path (`../../modules/photo-resources/src/PhotoResourcesModule`), not as a package. Expo autolinks the local module into the iOS build, so Swift changes need a native rebuild (`npx expo run:ios`).
 - IDs in and out are bare PhotoKit local identifiers with no `ph://` prefix. That matches the ID convention used across `@/src/library`.
 - Jest never loads this module. Tests replace the `PhotoLibrary` and `Exporter` boundaries with fakes from `@/test/support`, and production services are only `require`d on first use.
@@ -17,13 +18,11 @@ Path: @/modules/photo-resources
 
 ### Core Implementation
 - `getSizes(ids)` first sets every requested ID to null. It then fetches the assets and, for each one, adds up `fileSize` across every `PHAssetResource` (photo, Live Photo video, edits). An ID stays null if the asset is missing, has no resources, or has any resource without a readable size.
-- `exportForUpload(id)` picks the resources to upload and creates a new `tmp/photo-resources/<UUID>/` directory. It writes each resource with `PHAssetResourceManager.writeData` with network access allowed, so iCloud-only originals download. It returns `{ directory, files: [{ uri, filename, mimeType, size }] }` with `file://` URIs. `size` is read from the written file on disk, not from `fileSize`.
-- Which resources get exported:
-  - Images use the full-size (edited) rendition if there is one, otherwise the original photo.
-  - A Live Photo also gets its paired video, preferring the full-size paired video.
-  - Videos use the full-size video if present, otherwise the original.
-  - Assets that are neither images nor videos export nothing.
-- File naming: every file uses the base name of the asset's original resource plus the extension of the resource actually written. So an edited `FullSizeRender.jpg` uploads as `IMG_1234.jpg`, and a Live Photo's video shares the still's base name. The MIME type comes from the resource's UTI and falls back to `application/octet-stream`.
+- `exportForUpload(id)` picks the resources to upload and creates a new `tmp/photo-resources/<UUID>/` directory. It writes each resource with `PHAssetResourceManager.writeData` with network access allowed, so iCloud-only originals download. It returns `{ directory, resources: [{ uri, type, originalFilename, mimeType, size }] }` with `file://` URIs. `size` is read from the written file on disk, not from `fileSize`.
+- Which resources get exported (`uploadTypes`): every resource that holds media, in this order: `photo`, `alternatePhoto` (the RAW of a RAW+JPEG pair), `fullSizePhoto` (the edited still), `pairedVideo` (a Live Photo's video), `fullSizePairedVideo` (its edited video), `video`, `fullSizeVideo` (the edited video). An unedited photo exports one file; an edited Live Photo exports four. Deleting an item after sending it therefore loses no photo or video data.
+- Left out: `adjustmentData` (Photos' edit recipe), the `adjustmentBase*` renders edits were applied to, and capture proxies. None of them open outside Photos. They still count in `getSizes`, which is why the size shown can be slightly larger than the bytes sent.
+- `type` is the resource type's name as in `PHAssetResourceType` (`ResourceType` in `PhotoResources.types.ts`). `originalFilename` is the resource's own name in Photos, e.g. `IMG_1234.HEIC` or, for an edited version, `FullSizeRender.jpg`.
+- On disk each file is named `<index>.<extension>`, so resources that share a name can't overwrite each other. The module doesn't decide upload names: `toUploadFiles` in `@/src/transfer/upload-files.ts` names files for Drive from `type` and `originalFilename`. The MIME type comes from the resource's UTI and falls back to `application/octet-stream`.
 - `onExportProgress` events carry `{ id, progress }`. Progress runs from 0 to 1 across all of the asset's files, computed as `(fileIndex + fileFraction) / fileCount`.
 - `clearExports()` deletes the whole `photo-resources` temp root.
 
@@ -42,6 +41,7 @@ Path: @/modules/photo-resources
 - If a write or the file stat right after it fails, the module deletes its own export directory before throwing. Callers only need to discard directories from exports that succeeded.
 - Progress events aren't tied to a call: every listener receives progress for every export, and the JS adapter filters by `id`. PhotoKit's `progressHandler` only fires while downloading from iCloud, so an export of an item already on the device sends no progress events. The progress screen shows "Preparing…" until progress arrives.
 - `clearExports` removes the root without checking whether an export is running. The photo library adapter calls it once, when it's created at app launch and nothing can be mid-export.
-- The `ExportedFile` and `ExportResult` shapes are repeated as the `Exporter` types in `@/src/transfer/queue.ts`. The rest of the app and the test fakes code against those copies.
+- The native result isn't what the transfer queue consumes. `@/src/transfer/photo-exporter.ts` maps `ExportResult.resources` through `toUploadFiles` into the queue's `ExportedFile` (`{ uri, filename, mimeType, size }`) from `@/src/transfer/queue.ts`. The rest of the app and the test fakes code against that type.
+- The resource selection can only be checked on a device or simulator: Jest never loads this module. On a simulator, edit a photo in the Photos app (Auto Enhance is enough) and its export returns the original plus a `fullSizePhoto`. RAW+JPEG pairs (`alternatePhoto`) can't be created on a simulator.
 
 Created and maintained by Nori.

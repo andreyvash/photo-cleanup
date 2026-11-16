@@ -4,6 +4,7 @@ import PhotoResources from '../../modules/photo-resources/src/PhotoResourcesModu
 
 import { toExportError } from './export-errors';
 import type { Exporter } from './queue';
+import { toUploadFiles } from './upload-files';
 
 /** Exports photo-library items to temporary files with the PhotoResources native module. */
 export function createPhotoExporter(): Exporter {
@@ -13,7 +14,8 @@ export function createPhotoExporter(): Exporter {
         if (event.id === itemId) onProgress(event.progress);
       });
       try {
-        return await PhotoResources.exportForUpload(itemId);
+        const { directory, resources } = await PhotoResources.exportForUpload(itemId);
+        return { directory, files: toUploadFiles(resources) };
       } catch (error) {
         throw toExportError(error);
       } finally {

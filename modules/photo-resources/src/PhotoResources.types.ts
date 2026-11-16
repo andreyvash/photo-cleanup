@@ -8,15 +8,27 @@ export type ExportProgressEvent = {
   progress: number;
 };
 
-export type ExportedFile = {
+/** The PhotoKit resource types that hold an asset's media, named as in `PHAssetResourceType`. */
+export type ResourceType =
+  | 'photo'
+  | 'alternatePhoto'
+  | 'fullSizePhoto'
+  | 'pairedVideo'
+  | 'fullSizePairedVideo'
+  | 'video'
+  | 'fullSizeVideo';
+
+export type ExportedResource = {
   uri: string;
-  filename: string;
+  type: ResourceType;
+  /** The resource's own name in Photos, e.g. "IMG_1234.HEIC", or "FullSizeRender.jpg" for an edited version. */
+  originalFilename: string;
   mimeType: string;
   size: number;
 };
 
 export type ExportResult = {
-  /** Temporary directory holding `files`; delete it once they've been uploaded. */
+  /** Temporary directory holding `resources`; delete it once they've been uploaded. */
   directory: string;
-  files: ExportedFile[];
+  resources: ExportedResource[];
 };

@@ -25,8 +25,8 @@ public class PhotoResourcesModule: Module {
       return sizes
     }
 
-    /// Writes the asset's current version (edited if edited) plus a Live Photo's motion video into a
-    /// fresh temporary directory, downloading from iCloud when needed.
+    /// Writes every file Photos keeps with the asset's media (the original, a RAW, a Live Photo's video, and the
+    /// edited versions of each) into a fresh temporary directory, downloading from iCloud when needed.
     AsyncFunction("exportForUpload") { (id: String) async throws -> [String: Any] in
       guard let asset = PHAsset.fetchAssets(withLocalIdentifiers: [id], options: nil).firstObject else {
         throw Exception(name: "AssetNotFound", description: "This item is no longer in your library.", code: "ASSET_NOT_FOUND")
@@ -39,11 +39,11 @@ public class PhotoResourcesModule: Module {
       let directory = Self.exportRoot.appendingPathComponent(UUID().uuidString, isDirectory: true)
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
 
-      let baseName = Self.baseName(for: asset)
-      var files: [[String: Any]] = []
-      for (index, resource) in resources.enumerated() {
-        let filename = Self.filename(baseName: baseName, resource: resource)
-        let url = directory.appendingPathComponent(filename)
+      var exported: [[String: Any]] = []
+      for (index, (resource, type)) in resources.enumerated() {
+        // Upload names are decided in JS; on disk, the index keeps same-named resources apart.
+        let ext = (resource.originalFilename as NSString).pathExtension
+        let url = directory.appendingPathComponent(ext.isEmpty ? "\(index)" : "\(index).\(ext)")
         let options = PHAssetResourceRequestOptions()
         options.isNetworkAccessAllowed = true
         options.progressHandler = { [weak self] progress in
@@ -53,9 +53,10 @@ public class PhotoResourcesModule: Module {
         do {
           try await PHAssetResourceManager.default().writeData(for: resource, toFile: url, options: options)
           let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-          files.append([
+          exported.append([
             "uri": url.absoluteString,
-            "filename": filename,
+            "type": type,
+            "originalFilename": resource.originalFilename,
             "mimeType": Self.mimeType(for: resource),
             "size": (attributes[.size] as? NSNumber)?.int64Value ?? 0,
           ])
@@ -64,7 +65,7 @@ public class PhotoResourcesModule: Module {
           throw Self.exportException(for: error)
         }
       }
-      return ["directory": directory.absoluteString, "files": files]
+      return ["directory": directory.absoluteString, "resources": exported]
     }
 
     /// Removes every temporary export, e.g. leftovers from a previous launch.
@@ -94,34 +95,23 @@ public class PhotoResourcesModule: Module {
     return total
   }
 
-  static func uploadResources(for asset: PHAsset) -> [PHAssetResource] {
-    let resources = PHAssetResource.assetResources(for: asset)
-    func first(_ preferred: PHAssetResourceType, else fallback: PHAssetResourceType) -> PHAssetResource? {
-      resources.first { $0.type == preferred } ?? resources.first { $0.type == fallback }
-    }
-    switch asset.mediaType {
-    case .image:
-      let still = first(.fullSizePhoto, else: .photo)
-      let motion = asset.mediaSubtypes.contains(.photoLive) ? first(.fullSizePairedVideo, else: .pairedVideo) : nil
-      return [still, motion].compactMap { $0 }
-    case .video:
-      return [first(.fullSizeVideo, else: .video)].compactMap { $0 }
-    default:
-      return []
-    }
-  }
+  /// The resource types that hold media, originals first. Edit recipes (`adjustmentData`), the bases they were applied
+  /// to and capture proxies are left out: they can't be opened outside Photos.
+  static let uploadTypes: [(PHAssetResourceType, String)] = [
+    (.photo, "photo"),
+    (.alternatePhoto, "alternatePhoto"),
+    (.fullSizePhoto, "fullSizePhoto"),
+    (.pairedVideo, "pairedVideo"),
+    (.fullSizePairedVideo, "fullSizePairedVideo"),
+    (.video, "video"),
+    (.fullSizeVideo, "fullSizeVideo"),
+  ]
 
-  /// "IMG_1234" from the original resource, so an edited "FullSizeRender.jpg" uploads as "IMG_1234.jpg".
-  static func baseName(for asset: PHAsset) -> String {
+  static func uploadResources(for asset: PHAsset) -> [(PHAssetResource, String)] {
     let resources = PHAssetResource.assetResources(for: asset)
-    let original = resources.first { $0.type == .photo || $0.type == .video } ?? resources.first
-    let name = original?.originalFilename ?? asset.localIdentifier.replacingOccurrences(of: "/", with: "_")
-    return (name as NSString).deletingPathExtension
-  }
-
-  static func filename(baseName: String, resource: PHAssetResource) -> String {
-    let ext = (resource.originalFilename as NSString).pathExtension
-    return ext.isEmpty ? baseName : "\(baseName).\(ext)"
+    return uploadTypes.flatMap { type, name in
+      resources.filter { $0.type == type }.map { ($0, name) }
+    }
   }
 
   static func mimeType(for resource: PHAssetResource) -> String {
