@@ -80,12 +80,13 @@ describe('Sending to Google Drive', () => {
 
   it('shows which items failed and why, and retries just those', async () => {
     const { drive } = await openSendFor(['party', 'beach', 'cat'], { folders: [{ id: 'f1', name: 'Trip 2026' }] });
-    drive.failures.set('beach.HEIC', new DriveError('unavailable'));
+    // A rejected file fails on its own; the queue carries on with the rest.
+    drive.failures.set('beach.HEIC', new DriveError('rejected'));
 
     await fireEvent.press(await screen.findByRole('button', { name: 'Trip 2026' }));
     await fireEvent.press(screen.getByRole('button', { name: 'Send 3 Items' }));
 
-    expect(await screen.findByText("Google Drive didn't respond. Try again.")).toBeVisible();
+    expect(await screen.findByText("Google Drive couldn't accept the request.")).toBeVisible();
     expect(screen.getByText('2 of 3 sent')).toBeVisible();
 
     drive.failures.clear();

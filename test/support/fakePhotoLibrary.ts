@@ -16,11 +16,14 @@ export class FakePhotoLibrary implements PhotoLibrary {
   /** Ids visible when access is limited. */
   limitedSelection: string[] = [];
   readonly sizeRequests: string[][] = [];
+  /** Makes the next listing / size read fail, like a PhotoKit error. */
+  failNextList = false;
+  failNextSizes = false;
   /** Whether iOS's photo-access prompt has appeared. */
   systemPromptShown = false;
 
   private entries: FakeEntry[];
-  private listeners = new Set<() => void>();
+  private listeners = new Set<(change: { deletedIds: string[] }) => void>();
 
   constructor(entries: FakeEntry[], permission: PermissionState = 'granted') {
     this.entries = [...entries];
@@ -42,6 +45,10 @@ export class FakePhotoLibrary implements PhotoLibrary {
   async manageLimitedSelection() {}
 
   async listItems() {
+    if (this.failNextList) {
+      this.failNextList = false;
+      throw new Error('The operation couldn’t be completed.');
+    }
     if (this.permission === 'denied' || this.permission === 'undetermined') {
       throw new Error('No photo library access');
     }
@@ -49,6 +56,10 @@ export class FakePhotoLibrary implements PhotoLibrary {
   }
 
   async getSizes(ids: string[]) {
+    if (this.failNextSizes) {
+      this.failNextSizes = false;
+      throw new Error('The operation couldn’t be completed.');
+    }
     this.sizeRequests.push(ids);
     const sizes: SizeMap = {};
     for (const id of ids) {
@@ -62,11 +73,11 @@ export class FakePhotoLibrary implements PhotoLibrary {
       return 'cancelled';
     }
     this.entries = this.entries.filter((e) => !ids.includes(e.item.id));
-    this.emitChange();
+    this.emitChange(ids);
     return 'deleted';
   }
 
-  subscribe(onChange: () => void) {
+  subscribe(onChange: (change: { deletedIds: string[] }) => void) {
     // Like PHPhotoLibrary.register(_:): observing an unauthorized library makes iOS ask for access.
     if (this.permission === 'undetermined') {
       this.systemPromptShown = true;
@@ -85,6 +96,11 @@ export class FakePhotoLibrary implements PhotoLibrary {
 
   externallyRemove(id: string) {
     this.entries = this.entries.filter((e) => e.item.id !== id);
+    this.emitChange([id]);
+  }
+
+  /** Photos reports an edit or an iCloud sync update without adding or removing anything. */
+  externallyUpdate() {
     this.emitChange();
   }
 
@@ -98,8 +114,8 @@ export class FakePhotoLibrary implements PhotoLibrary {
       : this.entries;
   }
 
-  private emitChange() {
-    this.listeners.forEach((listener) => listener());
+  private emitChange(deletedIds: string[] = []) {
+    this.listeners.forEach((listener) => listener({ deletedIds }));
   }
 }
 

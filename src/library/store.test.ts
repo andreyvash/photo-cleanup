@@ -133,6 +133,67 @@ describe('library store', () => {
     expect(describeItems(['new'], state().sizes)).toBe('1 item · 7 MB');
   });
 
+  it('drops items deleted in the Photos app from the selection right away', async () => {
+    const library = new FakePhotoLibrary([photo('p1', 1_000_000), photo('p2', 2_000_000)]);
+    const { state } = setup(library);
+    await state().start();
+    state().toggleSelection('p1');
+    state().toggleSelection('p2');
+
+    library.externallyRemove('p1');
+
+    expect(state().selectedIds).toEqual(['p2']);
+  });
+
+  it('keeps measuring through a burst of library updates without measuring anything twice', async () => {
+    const library = new FakePhotoLibrary([
+      photo('a', 1),
+      photo('b', 2),
+      photo('c', 3),
+      photo('d', 4),
+      photo('e', 5),
+      photo('f', 6),
+    ]);
+    const { store, state } = setup(library, 2);
+    // Like an iCloud sync: updates keep arriving while sizes are being measured.
+    let updates = 0;
+    store.subscribe((s) => {
+      if (s.sizing && s.sizing.done > 0 && updates < 3) {
+        updates++;
+        library.externallyUpdate();
+      }
+    });
+
+    await state().start();
+
+    await until(() => state().sizing === null && Object.keys(state().sizes).length === 6);
+    const measured = library.sizeRequests.flat();
+    expect([...measured].sort()).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
+  });
+
+  it('says when the library can’t be read, instead of failing silently', async () => {
+    const library = new FakePhotoLibrary([photo('p1', 1_000_000)]);
+    library.failNextList = true;
+    const { state } = setup(library);
+
+    await state().start();
+
+    expect(state().notice).toBe('Couldn’t read your photo library.');
+    expect(state().sizing).toBeNull();
+  });
+
+  it('marks items whose size couldn’t be read as unknown and finishes measuring', async () => {
+    const library = new FakePhotoLibrary([photo('p1', 1_000_000), photo('p2', 2_000_000), photo('p3', 3_000_000)]);
+    library.failNextSizes = true;
+    const { state } = setup(library, 2);
+
+    await state().start();
+
+    expect(state().sizing).toBeNull();
+    // The first batch (p1, p2) failed; p3 was measured in the next one.
+    expect(describeItems(['p1', 'p2', 'p3'], state().sizes)).toBe('3 items · 3 MB + 2 unknown');
+  });
+
   it('deletes the selected items from Photos and says where they went', async () => {
     const library = new FakePhotoLibrary([photo('p1', 1_000_000), photo('p2', 2_000_000), video('v1', 3_000_000)]);
     const { state } = setup(library);

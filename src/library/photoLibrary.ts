@@ -15,5 +15,5 @@ export interface PhotoLibrary {
   /** iOS asks the user to confirm; 'cancelled' when they decline. */
   deleteItems(ids: string[]): Promise<DeleteOutcome>;
   /** Called when the library changes, including from other apps. Returns an unsubscribe function. */
-  subscribe(onChange: () => void): () => void;
+  subscribe(onChange: (change: { deletedIds: string[] }) => void): () => void;
 }

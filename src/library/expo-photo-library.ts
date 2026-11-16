@@ -85,7 +85,9 @@ export function createExpoPhotoLibrary(): PhotoLibrary {
     },
 
     subscribe: (onChange) => {
-      const subscription = addListener(() => onChange());
+      const subscription = addListener((event) =>
+        onChange({ deletedIds: (event.deletedAssets ?? []).map(toLocalIdentifier) }),
+      );
       return () => subscription.remove();
     },
   };

@@ -34,14 +34,19 @@ export type LibraryState = {
 const canRead = (permission: PermissionState) => permission === 'granted' || permission === 'limited';
 
 export function createLibraryStore(library: PhotoLibrary, { sizeBatchSize = 500 }: { sizeBatchSize?: number } = {}) {
-  let latestLoad = 0;
-  let unsubscribe: (() => void) | null = null;
+  let following = false;
+  let running: Promise<void> | null = null;
+  let reloadRequested = false;
 
   return createStore<LibraryState>()((set, get) => {
     async function load(permission: PermissionState) {
-      const load = ++latestLoad;
-      const items = await library.listItems();
-      if (load !== latestLoad) return;
+      let items: LibraryItem[];
+      try {
+        items = await library.listItems();
+      } catch {
+        set({ permission, sizing: null, notice: 'Couldn’t read your photo library.' });
+        return;
+      }
 
       const present = new Set(items.map((item) => item.id));
       const knownSizes: SizeMap = {};
@@ -57,9 +62,15 @@ export function createLibraryStore(library: PhotoLibrary, { sizeBatchSize = 500 
         sizing: toMeasure.length > 0 ? { done: 0, total: toMeasure.length } : null,
       }));
 
+      // Sizes are facts about an item, so every finished batch is kept even if the library changes meanwhile.
       for (let start = 0; start < toMeasure.length; start += sizeBatchSize) {
-        const measured = await library.getSizes(toMeasure.slice(start, start + sizeBatchSize));
-        if (load !== latestLoad) return;
+        const batch = toMeasure.slice(start, start + sizeBatchSize);
+        let measured: SizeMap;
+        try {
+          measured = await library.getSizes(batch);
+        } catch {
+          measured = Object.fromEntries(batch.map((id) => [id, null]));
+        }
         const done = Math.min(start + sizeBatchSize, toMeasure.length);
         set((state) => ({
           sizes: { ...state.sizes, ...measured },
@@ -68,21 +79,53 @@ export function createLibraryStore(library: PhotoLibrary, { sizeBatchSize = 500 
       }
     }
 
-    /** Only once access is granted: observing an unauthorized library makes iOS show its permission prompt. */
-    function followLibraryChanges() {
-      unsubscribe ??= library.subscribe(() => {
-        void library.getPermission().then(apply);
-      });
-    }
-
     async function apply(permission: PermissionState) {
       if (canRead(permission)) {
         followLibraryChanges();
         await load(permission);
       } else {
-        latestLoad++;
         set({ permission, items: [], sizes: {}, sizing: null, selectedIds: [] });
       }
+    }
+
+    /**
+     * Reloads run one at a time. Changes that arrive meanwhile (an iCloud sync can send many) collapse into a
+     * single follow-up reload instead of restarting the current one.
+     */
+    function reload(): Promise<void> {
+      if (running) {
+        reloadRequested = true;
+        return running;
+      }
+      running = (async () => {
+        do {
+          reloadRequested = false;
+          try {
+            await apply(await library.getPermission());
+          } catch {
+            set({ sizing: null, notice: 'Couldn’t read your photo library.' });
+          }
+        } while (reloadRequested);
+      })().finally(() => {
+        running = null;
+      });
+      return running;
+    }
+
+    /** Only once access is granted: observing an unauthorized library makes iOS show its permission prompt. */
+    function followLibraryChanges() {
+      if (following) return;
+      following = true;
+      library.subscribe(({ deletedIds }) => {
+        if (deletedIds.length > 0) {
+          const deleted = new Set(deletedIds);
+          set((state) => ({
+            items: state.items.filter((item) => !deleted.has(item.id)),
+            selectedIds: state.selectedIds.filter((id) => !deleted.has(id)),
+          }));
+        }
+        void reload();
+      });
     }
 
     return {
@@ -95,11 +138,10 @@ export function createLibraryStore(library: PhotoLibrary, { sizeBatchSize = 500 
       selectedIds: [],
       notice: null,
 
-      start: async () => {
-        await apply(await library.getPermission());
-      },
+      start: () => reload(),
       requestAccess: async () => {
-        await apply(await library.requestPermission());
+        await library.requestPermission();
+        await reload();
       },
       manageAccess: () => library.manageLimitedSelection(),
       setFilter: (filter) => set({ filter }),
