@@ -12,6 +12,7 @@ import { SELECTION_BAR_HEIGHT, SelectionBar } from '@/components/selection-bar';
 import { useLibrary } from '@/library/library-store-provider';
 import { describeItems } from '@/library/selection';
 import { visibleItems } from '@/library/sortFilter';
+import { useStableItems } from '@/library/use-stable-items';
 import { colors, spacing } from '@/theme';
 
 const COLUMNS = 3;
@@ -46,9 +47,15 @@ export default function LibraryScreen() {
     })),
   );
 
-  const items = useMemo(
+  const sortedItems = useMemo(
     () => visibleItems(state.items, state.sizes, { filter: state.filter, sort: state.sort }),
     [state.items, state.sizes, state.filter, state.sort],
+  );
+  // While sizes are still arriving, keep tiles where they are so a tap never lands on a tile that just moved.
+  const items = useStableItems(
+    sortedItems,
+    state.sizing !== null && state.sort === 'largest',
+    `${state.filter}:${state.sort}`,
   );
   const selected = useMemo(() => new Set(state.selectedIds), [state.selectedIds]);
   const openItem = useCallback((id: string) => router.push({ pathname: '/asset/[id]', params: { id } }), [router]);
