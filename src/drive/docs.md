@@ -9,7 +9,7 @@ Path: @/src/drive
 ### How it fits into the larger codebase
 - `DriveClient` is one of the boundaries in `@/src/services.tsx`. The production instance is built there lazily, as `createDriveClient({ getAccessToken: () => googleAuth.getAccessToken(), transport: expoUploadTransport })`. Every Drive request therefore gets its token from `@/src/google/auth.ts`.
 - Who calls in:
-  - `@/src/transfer/queue.ts` calls `uploadFile`, and halts the queue based on the `DriveError.kind`.
+  - `@/src/transfer/queue.ts` calls `uploadFile`, and halts the queue on `quota`, `auth`, `folderMissing` and `unavailable`.
   - The Send screens in `@/src/app/send` call `listFolders` through a TanStack Query and `createFolder` through a mutation.
 - The OAuth scope is `drive.file` only (`DRIVE_SCOPE` in `@/src/google/auth.ts`), so Drive shows the app only the folders it created. The folder query relies on this and doesn't filter by parent. The scope was chosen for personal use and to avoid restricted-scope verification.
 - Every external dependency can be injected: `fetch`, `transport`, `baseUrl` and `sleep`. That's how `client.test.ts` and `@/src/transfer/queue.test.ts` run the real client over HTTP against the local fake in `@/test/support/fakeDrive.ts`.
@@ -32,7 +32,7 @@ Path: @/src/drive
   | Anything else | `rejected`, with Google's error message |
 
 - Transient failures get up to 3 retries with exponential backoff and jitter, after which the client throws `unavailable`. The one reauthorization doesn't count toward that limit.
-- Token failures are told apart by duck typing, so the client doesn't import `@/src/google/auth.ts`. An error with `needsSignIn === true` (`GoogleAuthError`, for example when signed out) becomes `auth`. Any other failure, such as being offline during a refresh, is retried like a network failure and ends as `unavailable`. That way an offline user isn't told to sign in again.
+- Token failures are told apart by duck typing, so the client doesn't import `@/src/google/auth.ts`. An error with `needsSignIn === true` becomes `auth`. `@/src/google/auth.ts` sets it on every token failure except an offline one: no signed-in user, nothing in the keychain, or an expired or revoked refresh token. Any other failure, which in production means the `NSURLErrorDomain` error from an offline refresh, is retried like a network failure and ends as `unavailable`. That way an offline user isn't told to sign in again.
 - `uploadFile` runs the whole resumable protocol inside each attempt:
   1. POST to `/upload/drive/v3/files?uploadType=resumable` with the metadata (`name`, `parents: [folderId]`) and the `X-Upload-Content-Type` / `X-Upload-Content-Length` headers.
   2. Read the session URL from the `Location` header.

@@ -39,7 +39,7 @@ Path: @/
   - The library store (`@/src/library`) is provided at the root layout and lasts as long as the app.
   - The send session and transfer queue (`@/src/send`, `@/src/transfer`) are provided by the Send modal's layout and last only while the modal is open.
 
-  The library store's selection is how the two hand off: Send reads it, and when the transfer finishes it narrows the selection to the items that reached Drive.
+  The library store's selection is how the two hand off: Send reads it, and when the Send modal closes, however it closes (Done, swipe-down or Cancel), `SendSessionProvider`'s unmount cleanup narrows the selection to the items that reached Drive. That's what makes a delete after a partial send safe.
 - **IDs** are bare PhotoKit local identifiers everywhere. Only `@/src/library/expo-photo-library.ts` deals with expo-media-library's `ph://` IDs, and UI code builds `ph://<id>` itself for expo-image and expo-video.
 - **Native module** `@/modules/photo-resources` exists because expo-media-library has no file-size API. It also exports originals for upload, downloading them from iCloud when needed.
 - **Drive** (`@/src/drive`) uses only the `drive.file` scope, so the app sees only the folders it created. It uploads with the resumable protocol through an injectable upload transport.
@@ -54,13 +54,13 @@ Path: @/
   - iOS only, portrait, no tablet support, bundle ID `dev.photocleanup.app`;
   - the `typedRoutes` and `reactCompiler` experiments are on;
   - plugins: expo-router, splash screen, expo-media-library (with the photo-permission text) and expo-video, plus Google Sign-In only when `GOOGLE_IOS_CLIENT_ID` is set.
-- **Browse.** When the app starts, the library store checks photo access without showing iOS's prompt, which appears only when the user taps Allow Access. Once access is granted, the store lists metadata through the adapter, measures sizes through `PhotoResources.getSizes` in batches with visible progress, and reloads on every library change event. The Library screen derives the filtered, sorted list from the store with `visibleItems`.
+- **Browse.** When the app starts, the library store checks photo access without showing iOS's prompt, which appears only when the user taps Allow Access. Once access is granted, the store lists metadata through the adapter and measures sizes through `PhotoResources.getSizes` in batches with visible progress. Library change events prune deleted items at once and trigger a reload; reloads run one at a time, and a burst of events collapses into one follow-up reload. The Library screen derives the filtered, sorted list with `visibleItems`, and while sizes are still being measured in "Largest first" it keeps tiles where they are (`useStableItems`) instead of reshuffling the grid.
 - **Send.**
   1. The Send screen builds transfer items from the selection.
-  2. The queue exports each item to a temp directory (native module), uploads each file (Drive client, through the background upload task), and always discards the temp directory afterwards.
-  3. The progress screen shows each item's status, then narrows the selection to the items that were sent.
+  2. The queue exports each item to a temp directory (native module), uploads each file (Drive client, through the background upload task), and always discards the temp directory afterwards. An item is marked `sent` only when its export produced files and every one of them uploaded, because `sent` is what lets an item stay selected for deletion.
+  3. The progress screen shows each item's status. Closing the modal narrows the selection to the items that were sent.
 - **Delete.** The review sheet calls `deleteSelected`, which goes through iOS's own confirmation. If the user declines, nothing changes. If they confirm, the items are removed and a notice appears on the Library screen.
-- Scripts: `npm test` (Jest), `npm run typecheck` (`tsc --noEmit`), `npm run lint`, and `npm run ios` / `npm start` for the development client.
+- Scripts: `npm test` (Jest, run with `LC_ALL=en_US.UTF-8` so `Intl` number formatting doesn't depend on the host's region), `npm run typecheck` (`tsc --noEmit`), `npm run lint`, and `npm run ios` / `npm start` for the development client.
 
 ### Things to Know
 - Google setup:
@@ -74,6 +74,7 @@ Path: @/
 
   Google sign-in and real uploads are checked by hand.
 - Sizes come from PhotoKit's undocumented `fileSize` key. If Apple removes it, sizes show as "Size unavailable" and nothing crashes.
+- Temp exports left behind by a killed session are removed at app launch: `createExpoPhotoLibrary()` (`@/src/library`) calls `PhotoResources.clearExports()`. The root layout creates it, before any transfer can be running.
 - Known limitations:
   - Retrying a Live Photo whose first file already landed can duplicate that file in Drive.
   - `stop()` waits for an export that's in progress to finish.

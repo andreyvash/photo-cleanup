@@ -8,12 +8,12 @@ Path: @/modules/photo-resources
 
 ### How it fits into the larger codebase
 - It sits under the services boundary in `@/src/services.tsx`, and no screen or store calls it directly. Two adapters wrap it:
-  - `@/src/library/expo-photo-library.ts` uses `getSizes` to implement `PhotoLibrary.getSizes`.
-  - `@/src/transfer/photo-exporter.ts` uses `exportForUpload`, `clearExports` and the `onExportProgress` event to implement the `Exporter` interface.
+  - `@/src/library/expo-photo-library.ts` uses `getSizes` to implement `PhotoLibrary.getSizes`, and calls `clearExports` once when it's created at app launch.
+  - `@/src/transfer/photo-exporter.ts` uses `exportForUpload` and the `onExportProgress` event to implement the `Exporter` interface.
 - Both adapters import it by relative path (`../../modules/photo-resources/src/PhotoResourcesModule`), not as a package. Expo autolinks the local module into the iOS build, so Swift changes need a native rebuild (`npx expo run:ios`).
 - IDs in and out are bare PhotoKit local identifiers with no `ph://` prefix. That matches the ID convention used across `@/src/library`.
 - Jest never loads this module. Tests replace the `PhotoLibrary` and `Exporter` boundaries with fakes from `@/test/support`, and production services are only `require`d on first use.
-- Exception descriptions are shown to the user. The transfer queue in `@/src/transfer/queue.ts` displays an export error's `message` as that item's failure text on the progress screen.
+- Export errors reach the user through `toExportError` (`@/src/transfer/export-errors.ts`). Expo wraps the native exception ("Calling … has failed → Caused by: …") but keeps its `code`. `toExportError` replaces the text with app copy for `ICLOUD_DOWNLOAD_FAILED`, `NOT_ENOUGH_SPACE` and `ASSET_NOT_FOUND`, and for other codes strips the wrapper so the native description shows. The transfer queue displays the result as that item's failure text on the progress screen.
 
 ### Core Implementation
 - `getSizes(ids)` first sets every requested ID to null. It then fetches the assets and, for each one, adds up `fileSize` across every `PHAssetResource` (photo, Live Photo video, edits). An ID stays null if the asset is missing, has no resources, or has any resource without a readable size.
@@ -34,12 +34,14 @@ Path: @/modules/photo-resources
   | Code | When |
   |---|---|
   | `ASSET_NOT_FOUND` | The ID is no longer in the library |
-  | `ICLOUD_DOWNLOAD_FAILED` | The write failed with an `NSURLErrorDomain` error or an error domain containing "Cloud" |
+  | `NOT_ENOUGH_SPACE` | The write failed because the disk is full (`NSFileWriteOutOfSpaceError` or POSIX `ENOSPC`) |
+  | `ICLOUD_DOWNLOAD_FAILED` | The write failed with an `NSURLErrorDomain` error, an error domain containing "Cloud", or `PHPhotosError` `networkAccessRequired` / `networkError` |
   | `EXPORT_FAILED` | No resource to export, or any other write failure (carries the system's localized description) |
 
-- If a write fails, the module deletes its own export directory before throwing. Callers only need to discard directories from exports that succeeded.
-- Progress events aren't tied to a call: every listener receives progress for every export, and the JS adapter filters by `id`.
-- `clearExports` removes the root without checking whether an export is running. The exporter adapter calls it once, when the adapter is created and nothing can be mid-export.
+- `exportException` classifies a failure by walking the error chain through `NSUnderlyingErrorKey` (`errorChain`, capped at a few levels), because PhotoKit often reports network and disk failures as an underlying error. Disk-full is checked before network.
+- If a write or the file stat right after it fails, the module deletes its own export directory before throwing. Callers only need to discard directories from exports that succeeded.
+- Progress events aren't tied to a call: every listener receives progress for every export, and the JS adapter filters by `id`. PhotoKit's `progressHandler` only fires while downloading from iCloud, so an export of an item already on the device sends no progress events. The progress screen shows "Preparing…" until progress arrives.
+- `clearExports` removes the root without checking whether an export is running. The photo library adapter calls it once, when it's created at app launch and nothing can be mid-export.
 - The `ExportedFile` and `ExportResult` shapes are repeated as the `Exporter` types in `@/src/transfer/queue.ts`. The rest of the app and the test fakes code against those copies.
 
 Created and maintained by Nori.

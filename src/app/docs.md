@@ -23,7 +23,7 @@ Path: @/src/app
   - `checking`: only the header.
   - `undetermined`: an Allow Access prompt.
   - `denied`: an Open Settings prompt.
-  - Otherwise: a 3-column FlashList of `visibleItems(...)` with `LibraryHeader` as the list header, and an empty state that tells an empty library apart from a filter with no matches.
+  - Otherwise: a 3-column FlashList of `visibleItems(...)` passed through `useStableItems` (`@/src/library/use-stable-items.ts`), with `LibraryHeader` as the list header, and an empty state that tells an empty library apart from a filter with no matches. While sizes are still being measured in "Largest first", tiles keep their positions (new items are appended, removed ones dropped), so a tap never lands on a tile that just moved. The grid re-sorts once measuring finishes, and immediately when the user changes the filter or sort.
 
   The sort menu is a native header toolbar menu, hidden until photo access is granted or limited. When anything is selected, the floating `SelectionBar` appears and pushes `/delete` or `/send`.
 - `/asset/[id]` Preview:
@@ -37,19 +37,20 @@ Path: @/src/app
   - A Cancel button and the selection summary, then either sign-in (when signed out) or, when signed in, the folder list from `useQuery(['drive-folders', email])` with a "New Folder…" row and Sign Out.
   - Send is enabled only when the chosen folder is in the current list and something is selected.
   - Sending builds `TransferItem`s from the selection, starts the queue without awaiting it, and calls `router.replace('/send/progress')`, so going back can't return to the folder picker.
-- `/send/new-folder` form sheet: a `useMutation` calls `drive.createFolder`, then selects the new folder, invalidates `['drive-folders']` and goes back.
+- `/send/new-folder` form sheet: a `useMutation` calls `drive.createFolder`, then selects the new folder, invalidates `['drive-folders']` and goes back. Both the Create button and the keyboard's return key are ignored while the mutation is pending, so one name can't create two folders.
 - `/send/progress`:
-  - Each row shows the thumbnail, filename, status text, size and a status icon.
+  - Each row shows the thumbnail, filename, status text, size and a status icon. A `downloading` item with progress 0 reads "Preparing…", and "Downloading from iCloud N%" once progress arrives. PhotoKit only reports progress when it downloads from iCloud, so items already on the device stay at "Preparing…" while exporting.
   - The header shows "X of Y sent", the bytes sent and the folder name, with a SwiftUI `ProgressView` that tracks the fraction of items sent.
-  - While running or stopping, the screen stays awake, swipe-to-dismiss is off (`gestureEnabled: !busy`), and a Stop button shows.
-  - When finished, it plays a success or warning haptic and shows "Retry N Failed" (counting `failed` and `notSent` items) and Done. Done calls `keepSelected(sentIds)` and then `router.dismissTo('/')`.
+  - While running or stopping, the screen stays awake and a Stop button shows (reading "Stopping…" and disabled while stopping).
+  - Swipe-to-dismiss is off only while `running` (`gestureEnabled: phase !== 'running'`). While `stopping`, the user can swipe the modal away, because the export in progress can't be cancelled and may take minutes.
+  - When finished, it plays a success or warning haptic and shows "Retry N Failed" (counting `failed` and `notSent` items) and Done. Done only calls `router.dismissTo('/')`. Narrowing the selection happens in `SendSessionProvider`'s unmount cleanup, not here.
 
 ### Things to Know
 - Push the preview route with `params: { id }`, never by putting the ID in the path string: PhotoKit local identifiers contain slashes.
 - The Library header summary describes the visible, filtered items. The selection bar describes `selectedIds`, which can include items the current filter hides.
 - `Stack.Toolbar` menus and buttons render in the native header, and Jest can't drive them. Sorting is covered by unit tests in `@/src/library` and by the Maestro flow in `e2e/`.
-- Sending never deletes from Photos. `/delete` is the only way to delete, and after a transfer the selection shrinks to the items that reached Drive, so a later delete can't remove an item that wasn't copied.
-- Closing the Send modal unmounts the session, which stops the queue. That's why swipe-to-dismiss is off while sending.
+- Sending never deletes from Photos. `/delete` is the only way to delete. When the Send modal closes after a transfer (Done, swipe-down or Cancel), the selection shrinks to the items that reached Drive, so a later delete can't remove an item that wasn't copied.
+- Closing the Send modal unmounts the session, which stops the queue and narrows the selection (`@/src/send/send-session.tsx`). That's why swipe-to-dismiss is off while a transfer is running.
 - The delete sheet puts its thumbnails in a plain row, not a ScrollView, because a form sheet adopts a ScrollView inside it as the sheet's own scrolling content.
 - The overall progress bar counts items. The byte figures in the header use the sizes the library measured, and count unknown sizes as 0.
 
