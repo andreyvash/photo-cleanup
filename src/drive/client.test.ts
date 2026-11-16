@@ -98,6 +98,17 @@ describe('uploadFile', () => {
     expect(progress.at(-1)).toEqual([300_000, 300_000]);
   });
 
+  it('counts a 200 from Drive as uploaded even when the body is not JSON, and does not upload again', async () => {
+    const folderId = drive.addFolder('Backups');
+    drive.answerUploadWith('IMG_0001.HEIC', 'OK');
+
+    const result = await uploadPhoto(connect(), folderId);
+
+    expect(result).toEqual({ id: '' });
+    expect(drive.filesIn(folderId).map((file) => file.name)).toEqual(['IMG_0001.HEIC']);
+    expect(drive.requests('startUpload')).toBe(1);
+  });
+
   it('throws folderMissing when the folder does not exist', async () => {
     await expect(uploadPhoto(connect(), 'deleted-folder-id')).rejects.toMatchObject({
       kind: 'folderMissing',
@@ -202,14 +213,38 @@ describe('access tokens', () => {
     });
   });
 
-  it('throws auth when no token can be obtained', async () => {
+  it('throws auth when getting a token needs the user to sign in', async () => {
     const signedOut = async (): Promise<string> => {
-      throw new Error('getTokens requires a user to be signed in');
+      throw Object.assign(new Error('getTokens requires a user to be signed in'), { needsSignIn: true });
     };
 
     await expect(connect(signedOut).listFolders()).rejects.toMatchObject({
       kind: 'auth',
       message: 'Sign in to Google again to continue.',
+    });
+  });
+
+  it('retries when a token refresh fails for another reason, such as being offline', async () => {
+    drive.addFolder('Backups');
+    let refreshes = 0;
+    const flakyRefresh = async (): Promise<string> => {
+      if (++refreshes <= 2) throw new Error('The Internet connection appears to be offline.');
+      return drive.validToken;
+    };
+
+    const folders = await connect(flakyRefresh).listFolders();
+
+    expect(folders.map((folder) => folder.name)).toEqual(['Backups']);
+  });
+
+  it('gives up with unavailable when a token refresh keeps failing for another reason', async () => {
+    const offline = async (): Promise<string> => {
+      throw new Error('The Internet connection appears to be offline.');
+    };
+
+    await expect(connect(offline).listFolders()).rejects.toMatchObject({
+      kind: 'unavailable',
+      message: "Google Drive didn't respond. Try again.",
     });
   });
 });

@@ -161,6 +161,79 @@ describe('transfer queue', () => {
     expect(namesInDrive()).toEqual(['IMG_0001.JPG']);
   });
 
+  it('stops when the Drive folder is gone', async () => {
+    drive.fail('startUpload', { status: 404, message: 'File not found: 1a2b3c.' }, { name: 'IMG_0002.JPG' });
+    const queue = makeQueue();
+
+    await queue.start(threePhotos(), folder);
+
+    expect(queue.store.getState().statuses).toEqual({
+      a: { state: 'sent' },
+      b: { state: 'failed', message: 'The Drive folder no longer exists.' },
+      c: { state: 'notSent', message: 'The Drive folder no longer exists.' },
+    });
+    expect(await exporter.leftovers()).toEqual([]);
+  });
+
+  it('stops when Drive stays unavailable, without exporting the rest', async () => {
+    drive.fail('uploadBytes', { status: 503 }, { name: 'IMG_0002.JPG', times: Infinity });
+    const queue = makeQueue();
+    const transitions = recordTransitions(queue.store);
+
+    await queue.start(threePhotos(), folder);
+
+    expect(queue.store.getState().statuses).toEqual({
+      a: { state: 'sent' },
+      b: { state: 'failed', message: "Google Drive didn't respond. Try again." },
+      c: { state: 'notSent', message: "Google Drive didn't respond. Try again." },
+    });
+    expect(transitions).not.toContain('c downloading');
+    expect(namesInDrive()).toEqual(['IMG_0001.JPG']);
+  });
+
+  it('fails an item whose export has no files, and carries on', async () => {
+    exporter.addAsset('empty', []);
+    const queue = makeQueue();
+
+    await queue.start(
+      [photo('a', 'IMG_0001.JPG', 120_000), { id: 'empty', filename: null, size: null }, photo('c', 'IMG_0003.JPG', 50_000)],
+      folder,
+    );
+
+    expect(queue.store.getState().statuses).toEqual({
+      a: { state: 'sent' },
+      empty: { state: 'failed', message: 'Nothing to copy for this item.' },
+      c: { state: 'sent' },
+    });
+    expect(await exporter.leftovers()).toEqual([]);
+  });
+
+  it('ignores start() while a run is in progress', async () => {
+    const queue = makeQueue();
+    const items = threePhotos();
+
+    await Promise.all([queue.start(items, folder), queue.start(items, folder)]);
+
+    expect(queue.store.getState().statuses).toEqual({ a: { state: 'sent' }, b: { state: 'sent' }, c: { state: 'sent' } });
+    expect(namesInDrive()).toEqual(['IMG_0001.JPG', 'IMG_0002.JPG', 'IMG_0003.JPG']);
+  });
+
+  it('ignores retryFailed() while a retry is in progress, so stop() still cancels it', async () => {
+    drive.fail('startUpload', { status: 400, message: 'Invalid value for name.' }, { name: 'IMG_0002.JPG' });
+    const queue = makeQueue();
+    await queue.start(threePhotos(), folder);
+    const inFlight = drive.stallUpload('IMG_0002.JPG');
+
+    const retries = Promise.all([queue.retryFailed(), queue.retryFailed()]);
+    await inFlight;
+
+    expect(queue.store.getState().phase).toBe('running');
+    queue.stop();
+    await retries;
+    expect(queue.store.getState().statuses.b).toEqual({ state: 'notSent', message: 'Stopped' });
+    expect(namesInDrive()).toEqual(['IMG_0001.JPG', 'IMG_0003.JPG']);
+  });
+
   it('stop() cancels the upload in flight and leaves the rest unsent; retryFailed sends them', async () => {
     const inFlight = drive.stallUpload('IMG_0002.JPG');
     const queue = makeQueue();

@@ -22,7 +22,8 @@ Path: @/src/drive
 
   | Failure | Outcome |
   |---|---|
-  | Not an HTTP error response (dropped connection, missing session URL) | retry |
+  | Not an HTTP error response (dropped connection, missing session URL, a token refresh that failed without needing sign-in) | retry |
+  | `getAccessToken` throws an error with `needsSignIn === true` | `auth`, no retry |
   | 401 | get a new token and retry once; a second 401 becomes `auth` |
   | 403 `storageQuotaExceeded` | `quota`, no retry |
   | 403 `rateLimitExceeded` / `userRateLimitExceeded`, 429, 5xx | retry |
@@ -30,11 +31,12 @@ Path: @/src/drive
   | 404 while sending bytes (the session expired) | retry with a new session |
   | Anything else | `rejected`, with Google's error message |
 
-- Transient failures get up to 3 retries with exponential backoff and jitter, after which the client throws `unavailable`. The one reauthorization doesn't count toward that limit. If no token can be obtained at all (`getAccessToken` throws, for example when signed out), the client throws `auth`.
+- Transient failures get up to 3 retries with exponential backoff and jitter, after which the client throws `unavailable`. The one reauthorization doesn't count toward that limit.
+- Token failures are told apart by duck typing, so the client doesn't import `@/src/google/auth.ts`. An error with `needsSignIn === true` (`GoogleAuthError`, for example when signed out) becomes `auth`. Any other failure, such as being offline during a refresh, is retried like a network failure and ends as `unavailable`. That way an offline user isn't told to sign in again.
 - `uploadFile` runs the whole resumable protocol inside each attempt:
   1. POST to `/upload/drive/v3/files?uploadType=resumable` with the metadata (`name`, `parents: [folderId]`) and the `X-Upload-Content-Type` / `X-Upload-Content-Length` headers.
   2. Read the session URL from the `Location` header.
-  3. Hand the whole file to the `UploadTransport` as a single PUT. Only a 200 or 201 counts as success, and the new file's `id` is parsed from the response body.
+  3. Hand the whole file to the `UploadTransport` as a single PUT. A 200 or 201 counts as success whatever the body contains. The new file's `id` is read from the body when it's there, and is `''` otherwise. Drive already has the file at that point, so a body that can't be read must never lead to another upload and a duplicate.
 - Because step 1 is inside the retried attempt, every retry opens a new session and sends the file from the first byte. A partial upload is never resumed.
 - `UploadTransport` is the seam for sending the bytes. The production `expoUploadTransport` (in `transport.ts`) uses expo-file-system's `File.createUploadTask` with `sessionType: 'background'`. iOS can then keep streaming from disk while the app is suspended, as long as the JS runtime that started the upload is still alive.
 - `listFolders` queries `mimeType = folder and trashed = false`, requests `id,name,createdTime`, reads one page (`pageSize` 1000), and sorts by name with `localeCompare`. `createFolder` POSTs folder metadata and returns the same `DriveFolder` shape.

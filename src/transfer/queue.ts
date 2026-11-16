@@ -1,7 +1,7 @@
 import { createStore, type StoreApi } from 'zustand/vanilla';
 
 import type { DriveClient } from '@/drive/client';
-import { DriveError } from '@/drive/errors';
+import { DriveError, type DriveErrorKind } from '@/drive/errors';
 
 export type ExportedFile = { uri: string; filename: string; mimeType: string; size: number };
 
@@ -22,7 +22,7 @@ export type TransferStatus =
   | { state: 'uploading'; progress: number }
   | { state: 'sent' }
   | { state: 'failed'; message: string }
-  /** Never attempted: stopped by the user, or Drive is full. */
+  /** Never attempted: stopped by the user, or an earlier item hit an error that halted the queue. */
   | { state: 'notSent'; message: string };
 
 export type TransferState = {
@@ -34,12 +34,18 @@ export type TransferState = {
 
 export type TransferQueue = {
   store: StoreApi<TransferState>;
+  /** Resolves when the run finishes. Does nothing while a run is in progress. */
   start(items: TransferItem[], folder: { id: string; name: string }): Promise<void>;
+  /** Cancels the upload in flight; it and every remaining item become notSent "Stopped". */
   stop(): void;
+  /** Re-runs every failed and notSent item. Does nothing while a run is in progress. */
   retryFailed(): Promise<void>;
 };
 
 const STOPPED = 'Stopped';
+const NOTHING_TO_COPY = 'Nothing to copy for this item.';
+/** Errors that would fail every remaining item too, so the queue stops instead of exporting them. */
+const HALTING_ERRORS = new Set<DriveErrorKind>(['quota', 'auth', 'folderMissing', 'unavailable']);
 
 /**
  * Sends items to a Drive folder one at a time, in order. Each item is exported to a temp directory, every one of
@@ -93,13 +99,14 @@ export function createTransferQueue(deps: { drive: Pick<DriveClient, 'uploadFile
         return STOPPED;
       }
       setStatus(id, { state: 'failed', message: messageOf(error) });
-      return error instanceof DriveError && (error.kind === 'quota' || error.kind === 'auth') ? error.message : null;
+      return error instanceof DriveError && HALTING_ERRORS.has(error.kind) ? error.message : null;
     } finally {
       await deps.exporter.discard(exported.directory).catch(() => {});
     }
   }
 
   async function uploadAll(id: string, files: ExportedFile[], folderId: string, signal: AbortSignal): Promise<void> {
+    if (files.length === 0) throw new Error(NOTHING_TO_COPY);
     const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
     const progressAt = (bytes: number) => (totalBytes > 0 ? Math.min(bytes / totalBytes, 1) : 1);
     let uploadedBytes = 0;
@@ -121,10 +128,13 @@ export function createTransferQueue(deps: { drive: Pick<DriveClient, 'uploadFile
     }
   }
 
+  const isBusy = () => store.getState().phase === 'running' || store.getState().phase === 'stopping';
+
   return {
     store,
 
     async start(items, folder) {
+      if (isBusy()) return;
       store.setState({ items, folder, statuses: {} });
       await run(
         items.map((item) => item.id),
@@ -139,6 +149,7 @@ export function createTransferQueue(deps: { drive: Pick<DriveClient, 'uploadFile
     },
 
     async retryFailed() {
+      if (isBusy()) return;
       const { folder, items, statuses } = store.getState();
       if (!folder) return;
       const ids = items

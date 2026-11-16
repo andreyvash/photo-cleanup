@@ -63,6 +63,7 @@ export class FakeDrive {
   private sessions = new Map<string, UploadSession>();
   private rules: FailureRule[] = [];
   private stalls = new Map<string, () => void>();
+  private uploadAnswers = new Map<string, string>();
   private counts: Record<DriveEndpoint, number> = {
     listFiles: 0,
     createFile: 0,
@@ -125,6 +126,11 @@ export class FakeDrive {
    */
   stallUpload(name: string): Promise<void> {
     return new Promise((resolve) => this.stalls.set(name, resolve));
+  }
+
+  /** The next upload of `name` is stored as usual, but Drive answers with `body` instead of the JSON file resource. */
+  answerUploadWith(name: string, body: string): void {
+    this.uploadAnswers.set(name, body);
   }
 
   /** What is in a folder, in creation order. */
@@ -276,6 +282,13 @@ export class FakeDrive {
       trashed: false,
       size: bytes.length,
     });
+    const answer = this.uploadAnswers.get(session.name);
+    if (answer !== undefined) {
+      this.uploadAnswers.delete(session.name);
+      res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Length': Buffer.byteLength(answer) });
+      res.end(answer);
+      return;
+    }
     sendJson(res, 200, pick(this.files.find((file) => file.id === id)!, session.fields ?? 'id,name'));
   }
 

@@ -64,11 +64,13 @@ export function createDriveClient(options: DriveClientOptions): DriveClient {
   const { getAccessToken, transport, baseUrl = 'https://www.googleapis.com', sleep = wait } = options;
   const fetchImpl: typeof fetch = options.fetch ?? ((input, init) => globalThis.fetch(input, init));
 
+  /** A failure that doesn't need the user to sign in (e.g. offline during a refresh) is retried like a network failure. */
   async function accessToken(): Promise<string> {
     try {
       return await getAccessToken();
     } catch (cause) {
-      throw new DriveError('auth', { cause });
+      if (needsSignIn(cause)) throw new DriveError('auth', { cause });
+      throw cause;
     }
   }
 
@@ -78,10 +80,9 @@ export function createDriveClient(options: DriveClientOptions): DriveClient {
     let retries = 0;
     for (;;) {
       if (signal?.aborted) throw new DriveError('cancelled');
-      const authorization = `Bearer ${await accessToken()}`;
       let failure: unknown;
       try {
-        return await attempt(authorization);
+        return await attempt(`Bearer ${await accessToken()}`);
       } catch (error) {
         if (signal?.aborted) throw new DriveError('cancelled', { cause: error });
         failure = error;
@@ -157,7 +158,8 @@ export function createDriveClient(options: DriveClientOptions): DriveClient {
           signal,
         });
         if (sent.status !== 200 && sent.status !== 201) throw new HttpFailure(sent.status, sent.body, 'sendBytes');
-        return { id: (JSON.parse(sent.body) as { id: string }).id };
+        // Drive has the file once it answers 200/201, so an unreadable body must not lead to another upload.
+        return { id: readId(sent.body) };
       }, signal);
     },
   };
@@ -165,6 +167,7 @@ export function createDriveClient(options: DriveClientOptions): DriveClient {
 
 /** Decides what a failed attempt means. Anything that is not an HTTP error response is a network failure. */
 function judge(failure: unknown): Verdict {
+  if (failure instanceof DriveError) return failure;
   if (!(failure instanceof HttpFailure)) return 'retry';
   const { status, stage } = failure;
   const { reasons, message } = readGoogleError(failure.body);
@@ -176,6 +179,20 @@ function judge(failure: unknown): Verdict {
   if (status === 404 && stage === 'sendBytes') return 'retry';
   if (status === 429 || status >= 500) return 'retry';
   return new DriveError('rejected', { googleMessage: message, cause: failure });
+}
+
+/** Matches GoogleAuthError's `needsSignIn` without depending on the sign-in module. */
+function needsSignIn(error: unknown): boolean {
+  return typeof error === 'object' && error !== null && (error as { needsSignIn?: unknown }).needsSignIn === true;
+}
+
+function readId(body: string): string {
+  try {
+    const { id } = JSON.parse(body) as { id?: unknown };
+    return typeof id === 'string' ? id : '';
+  } catch {
+    return '';
+  }
 }
 
 function readGoogleError(body: string): { reasons: string[]; message?: string } {
