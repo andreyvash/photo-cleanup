@@ -1,4 +1,5 @@
-import { fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
+import { router } from 'expo-router';
+import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
 import type { ReactNode } from 'react';
 
 import { DriveError } from '@/drive/errors';
@@ -107,6 +108,21 @@ describe('Sending to Google Drive', () => {
 
     expect(app.getPathname()).toBe('/');
     expect(screen.queryByTestId('selection-bar')).toBeNull();
+  });
+
+  it('narrows the selection to what reached Drive even when the sheet is swiped away instead of tapping Done', async () => {
+    const { app, drive } = await openSendFor(['party', 'beach'], { folders: [{ id: 'f1', name: 'Trip 2026' }] });
+    drive.failures.set('party.HEIC', new DriveError('rejected'));
+
+    await fireEvent.press(await screen.findByRole('button', { name: 'Trip 2026' }));
+    await fireEvent.press(screen.getByRole('button', { name: 'Send 2 Items' }));
+    await screen.findByRole('button', { name: 'Done' });
+
+    // A swipe-down dismisses the modal without pressing Done.
+    await act(() => router.back());
+
+    expect(app.getPathname()).toBe('/');
+    expect(within(screen.getByTestId('selection-bar')).getByText('1 item · 3 MB')).toBeVisible();
   });
 
   it('creates a new folder and selects it', async () => {

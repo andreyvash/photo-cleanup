@@ -4,6 +4,7 @@ import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 
 import type { GoogleAccount, GoogleAuth } from '@/google/auth';
+import { useLibrary } from '@/library/library-store-provider';
 import { useService } from '@/services';
 import { createTransferQueue, type TransferQueue, type TransferState } from '@/transfer/queue';
 
@@ -73,10 +74,19 @@ export function SendSessionProvider({ children }: { children: ReactNode }) {
     queryClient: new QueryClient({ defaultOptions: { queries: { retry: 1 } } }),
   }));
 
+  const keepSelected = useLibrary((state) => state.keepSelected);
   useEffect(() => {
     void value.session.getState().restore();
-    return () => value.queue.stop();
-  }, [value]);
+    return () => {
+      value.queue.stop();
+      // However the modal closes (Done, swipe-down, Cancel), only items that actually reached Drive stay selected,
+      // so a follow-up delete can never remove an item that wasn't copied.
+      const { items, statuses } = value.queue.store.getState();
+      if (items.length > 0) {
+        keepSelected(items.filter((item) => statuses[item.id]?.state === 'sent').map((item) => item.id));
+      }
+    };
+  }, [value, keepSelected]);
 
   return (
     <SendSessionContext.Provider value={value}>

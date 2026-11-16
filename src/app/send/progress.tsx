@@ -12,7 +12,6 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { Button } from '@/components/button';
 import { formatBytes, formatCount } from '@/lib/format';
-import { useLibrary } from '@/library/library-store-provider';
 import { useTransfer, useTransferQueue } from '@/send/send-session';
 import { colors, radius, spacing, tabularNumbers, type } from '@/theme';
 import type { TransferItem, TransferStatus } from '@/transfer/queue';
@@ -62,7 +61,6 @@ export default function TransferProgressScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const queue = useTransferQueue();
-  const keepSelected = useLibrary((s) => s.keepSelected);
   const { phase, folder, items, statuses } = useTransfer(
     useShallow((s) => ({ phase: s.phase, folder: s.folder, items: s.items, statuses: s.statuses })),
   );
@@ -94,17 +92,14 @@ export default function TransferProgressScreen() {
     previousPhase.current = phase;
   }, [phase, retryable]);
 
-  function done() {
-    // Only what actually reached Drive stays selected, so a follow-up delete can't remove an item that wasn't copied.
-    keepSelected(sentIds);
-    router.dismissTo('/');
-  }
+  // Closing the modal narrows the selection to what reached Drive (see SendSessionProvider).
+  const done = () => router.dismissTo('/');
 
   const title = busy ? 'Sending' : retryable > 0 ? 'Finished with Problems' : 'Sent to Drive';
 
   return (
     <View style={styles.container}>
-      <Stack.Screen options={{ title, gestureEnabled: !busy }} />
+      <Stack.Screen options={{ title, gestureEnabled: phase !== 'running' }} />
       <FlatList
         data={items}
         keyExtractor={(item) => item.id}
