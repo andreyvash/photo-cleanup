@@ -61,6 +61,20 @@ describe('library store', () => {
     expect(state().items.map((i) => i.id)).toEqual(['p1']);
   });
 
+  it('does not trigger iOS’s photo prompt until the user asks for access, then follows library changes', async () => {
+    const library = new FakePhotoLibrary([photo('p1', 1_000_000)], 'undetermined');
+    const { state } = setup(library);
+
+    await state().start();
+    expect(library.systemPromptShown).toBe(false);
+
+    await state().requestAccess();
+    library.externallyAdd(photo('p2', 2_000_000));
+
+    await until(() => state().items.length === 2);
+    expect(library.systemPromptShown).toBe(true);
+  });
+
   it('stays empty when access is denied', async () => {
     const library = new FakePhotoLibrary([photo('p1', 1_000_000)], 'undetermined');
     library.permissionAfterRequest = 'denied';

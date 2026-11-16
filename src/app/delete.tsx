@@ -3,7 +3,7 @@ import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 import { useShallow } from 'zustand/react/shallow';
 
 import { Button } from '@/components/button';
@@ -11,6 +11,8 @@ import { formatCount } from '@/lib/format';
 import { useLibrary } from '@/library/library-store-provider';
 import { describeItems } from '@/library/selection';
 import { colors, radius, spacing, tabularNumbers, type } from '@/theme';
+
+const MAX_THUMBNAILS = 7;
 
 const WARNINGS: { icon: SFSymbol; text: string }[] = [
   { icon: 'trash', text: 'They’ll move to Recently Deleted in Photos, where you can recover them for 30 days.' },
@@ -52,11 +54,17 @@ export default function DeleteReviewSheet() {
         <Text style={styles.summary}>{describeItems(selectedIds, sizes)}</Text>
       </View>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.thumbnails}>
-        {selectedIds.map((id) => (
+      {/* A plain row: a ScrollView here would be adopted by the form sheet as its scrolling content. */}
+      <View style={styles.thumbnails}>
+        {selectedIds.slice(0, MAX_THUMBNAILS).map((id) => (
           <Image key={id} source={{ uri: `ph://${id}` }} contentFit="cover" style={styles.thumbnail} />
         ))}
-      </ScrollView>
+        {selectedIds.length > MAX_THUMBNAILS ? (
+          <View style={[styles.thumbnail, styles.more]}>
+            <Text style={styles.moreText}>+{selectedIds.length - MAX_THUMBNAILS}</Text>
+          </View>
+        ) : null}
+      </View>
 
       <View style={styles.warnings}>
         {WARNINGS.map(({ icon, text }) => (
@@ -86,8 +94,10 @@ const styles = StyleSheet.create({
   heading: { paddingHorizontal: spacing.xl, gap: spacing.xs, alignItems: 'center' },
   title: { ...type.title2, color: colors.label, textAlign: 'center' },
   summary: { ...type.subheadline, ...tabularNumbers, color: colors.secondaryLabel },
-  thumbnails: { paddingHorizontal: spacing.xl, gap: spacing.xs },
-  thumbnail: { width: 64, height: 64, borderRadius: radius.thumb, borderCurve: 'continuous', backgroundColor: colors.placeholder },
+  thumbnails: { flexDirection: 'row', justifyContent: 'center', paddingHorizontal: spacing.xl, gap: spacing.xs },
+  thumbnail: { width: 44, height: 44, borderRadius: radius.thumb, borderCurve: 'continuous', backgroundColor: colors.placeholder },
+  more: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.fill },
+  moreText: { ...type.subheadline, ...tabularNumbers, fontWeight: '600', color: colors.secondaryLabel },
   warnings: { paddingHorizontal: spacing.xl, gap: spacing.m },
   warning: { flexDirection: 'row', gap: spacing.m, alignItems: 'flex-start' },
   warningIcon: { width: 24, height: 24 },

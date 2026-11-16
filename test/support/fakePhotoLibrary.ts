@@ -16,6 +16,8 @@ export class FakePhotoLibrary implements PhotoLibrary {
   /** Ids visible when access is limited. */
   limitedSelection: string[] = [];
   readonly sizeRequests: string[][] = [];
+  /** Whether iOS's photo-access prompt has appeared. */
+  systemPromptShown = false;
 
   private entries: FakeEntry[];
   private listeners = new Set<() => void>();
@@ -31,6 +33,7 @@ export class FakePhotoLibrary implements PhotoLibrary {
 
   async requestPermission() {
     if (this.permission === 'undetermined') {
+      this.systemPromptShown = true;
       this.permission = this.permissionAfterRequest;
     }
     return this.permission;
@@ -64,6 +67,10 @@ export class FakePhotoLibrary implements PhotoLibrary {
   }
 
   subscribe(onChange: () => void) {
+    // Like PHPhotoLibrary.register(_:): observing an unauthorized library makes iOS ask for access.
+    if (this.permission === 'undetermined') {
+      this.systemPromptShown = true;
+    }
     this.listeners.add(onChange);
     return () => {
       this.listeners.delete(onChange);

@@ -104,7 +104,7 @@ const styles = StyleSheet.create({
     padding: spacing.m,
     borderRadius: radius.card,
     borderCurve: 'continuous',
-    backgroundColor: colors.card,
+    backgroundColor: colors.surface,
   },
   bannerText: { ...type.footnote, color: colors.label, flex: 1 },
   bannerAction: { ...type.subheadline, fontWeight: '600', color: colors.accent },

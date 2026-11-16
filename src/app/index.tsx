@@ -57,7 +57,10 @@ export default function LibraryScreen() {
     <>
       <Stack.Screen.Title large>Library</Stack.Screen.Title>
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Menu icon="arrow.up.arrow.down" title="Sort By">
+        <Stack.Toolbar.Menu
+          icon="arrow.up.arrow.down"
+          title="Sort By"
+          hidden={state.permission !== 'granted' && state.permission !== 'limited'}>
           <Stack.Toolbar.MenuAction isOn={state.sort === 'largest'} onPress={() => actions.setSort('largest')}>
             Largest First
           </Stack.Toolbar.MenuAction>

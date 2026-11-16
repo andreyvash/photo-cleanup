@@ -15,6 +15,10 @@ xcrun simctl erase "$UDID"
 xcrun simctl boot "$UDID"
 xcrun simctl bootstatus "$UDID" -b >/dev/null
 
+# Pin number formatting ("25.8 MB") so the e2e assertions don't depend on the host's region.
+xcrun simctl spawn "$UDID" defaults write -g AppleLocale -string en_US
+xcrun simctl spawn "$UDID" defaults write -g AppleLanguages -array en
+
 # Added one at a time so creation dates follow this order (oldest first).
 for f in photo_small.jpg video_short.mp4 photo_large.jpg photo_medium.jpg video_long.mp4; do
   xcrun simctl addmedia "$UDID" "$FIXTURES/$f"

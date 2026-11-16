@@ -14,6 +14,8 @@ export const colors = {
   tertiaryLabel: Color.ios.tertiaryLabel,
   background: Color.ios.systemBackground,
   groupedBackground: Color.ios.systemGroupedBackground,
+  /** Cards and banners placed on `background`. */
+  surface: Color.ios.secondarySystemBackground,
   card: Color.ios.secondarySystemGroupedBackground,
   fill: Color.ios.tertiarySystemFill,
   placeholder: Color.ios.secondarySystemFill,

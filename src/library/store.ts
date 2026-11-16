@@ -68,8 +68,16 @@ export function createLibraryStore(library: PhotoLibrary, { sizeBatchSize = 500 
       }
     }
 
+    /** Only once access is granted: observing an unauthorized library makes iOS show its permission prompt. */
+    function followLibraryChanges() {
+      unsubscribe ??= library.subscribe(() => {
+        void library.getPermission().then(apply);
+      });
+    }
+
     async function apply(permission: PermissionState) {
       if (canRead(permission)) {
+        followLibraryChanges();
         await load(permission);
       } else {
         latestLoad++;
@@ -88,9 +96,6 @@ export function createLibraryStore(library: PhotoLibrary, { sizeBatchSize = 500 
       notice: null,
 
       start: async () => {
-        unsubscribe ??= library.subscribe(() => {
-          void library.getPermission().then(apply);
-        });
         await apply(await library.getPermission());
       },
       requestAccess: async () => {

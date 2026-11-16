@@ -66,6 +66,7 @@ export const LibraryTile = memo(function LibraryTile({
       ) : null}
 
       <Pressable
+        testID="select-toggle"
         accessibilityRole="checkbox"
         accessibilityLabel="Select"
         accessibilityState={{ checked: selected }}
