@@ -2,6 +2,7 @@ import { Directory } from 'expo-file-system';
 
 import PhotoResources from '../../modules/photo-resources/src/PhotoResourcesModule';
 
+import { toExportError } from './export-errors';
 import type { Exporter } from './queue';
 
 /** Exports photo-library items to temporary files with the PhotoResources native module. */
@@ -16,6 +17,8 @@ export function createPhotoExporter(): Exporter {
       });
       try {
         return await PhotoResources.exportForUpload(itemId);
+      } catch (error) {
+        throw toExportError(error);
       } finally {
         subscription.remove();
       }

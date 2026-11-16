@@ -1,4 +1,10 @@
-import { GoogleSignin, isSuccessResponse, type User } from '@react-native-google-signin/google-signin';
+import {
+  GoogleSignin,
+  isErrorWithCode,
+  isSuccessResponse,
+  statusCodes,
+  type User,
+} from '@react-native-google-signin/google-signin';
 import Constants from 'expo-constants';
 
 /** Lets the app see only files and folders it creates in the user's Drive. */
@@ -16,7 +22,15 @@ export interface GoogleAuth {
   getAccessToken(): Promise<string>;
 }
 
-export class GoogleAuthError extends Error {}
+/** `needsSignIn` tells callers that retrying won't help until the user signs in (again). */
+export class GoogleAuthError extends Error {
+  constructor(
+    message: string,
+    readonly needsSignIn = false,
+  ) {
+    super(message);
+  }
+}
 
 const toAccount = (user: User): GoogleAccount => ({ email: user.user.email, name: user.user.name ?? null });
 
@@ -26,7 +40,7 @@ export function createGoogleAuth(): GoogleAuth {
 
   function configure() {
     if (!iosClientId) {
-      throw new GoogleAuthError('Google sign-in isn’t set up yet. Add GOOGLE_IOS_CLIENT_ID to .env.local and rebuild.');
+      throw new GoogleAuthError('Google sign-in isn’t set up yet. Add GOOGLE_IOS_CLIENT_ID to .env.local and rebuild.', true);
     }
     if (!configured) {
       GoogleSignin.configure({ iosClientId, scopes: [DRIVE_SCOPE] });
@@ -63,8 +77,15 @@ export function createGoogleAuth(): GoogleAuth {
     },
     getAccessToken: async () => {
       configure();
-      const { accessToken } = await GoogleSignin.getTokens();
-      return accessToken;
+      try {
+        const { accessToken } = await GoogleSignin.getTokens();
+        return accessToken;
+      } catch (error) {
+        if (isErrorWithCode(error) && error.code === statusCodes.SIGN_IN_REQUIRED) {
+          throw new GoogleAuthError('Sign in to Google again to continue.', true);
+        }
+        throw error;
+      }
     },
   };
 }

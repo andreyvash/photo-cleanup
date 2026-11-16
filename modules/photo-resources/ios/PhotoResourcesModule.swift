@@ -52,17 +52,17 @@ public class PhotoResourcesModule: Module {
         }
         do {
           try await PHAssetResourceManager.default().writeData(for: resource, toFile: url, options: options)
+          let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+          files.append([
+            "uri": url.absoluteString,
+            "filename": filename,
+            "mimeType": Self.mimeType(for: resource),
+            "size": (attributes[.size] as? NSNumber)?.int64Value ?? 0,
+          ])
         } catch {
           try? FileManager.default.removeItem(at: directory)
           throw Self.exportException(for: error)
         }
-        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
-        files.append([
-          "uri": url.absoluteString,
-          "filename": filename,
-          "mimeType": Self.mimeType(for: resource),
-          "size": (attributes[.size] as? NSNumber)?.int64Value ?? 0,
-        ])
       }
       return ["directory": directory.absoluteString, "files": files]
     }
@@ -129,11 +129,34 @@ public class PhotoResourcesModule: Module {
   }
 
   static func exportException(for error: Error) -> Exception {
-    let nsError = error as NSError
-    let isNetwork = nsError.domain == NSURLErrorDomain || nsError.domain.contains("Cloud")
-    if isNetwork {
+    let chain = errorChain(error as NSError)
+    let outOfSpace = chain.contains {
+      ($0.domain == NSCocoaErrorDomain && $0.code == NSFileWriteOutOfSpaceError)
+        || ($0.domain == NSPOSIXErrorDomain && $0.code == Int(ENOSPC))
+    }
+    if outOfSpace {
+      return Exception(name: "NotEnoughSpace", description: "Not enough free space to copy this item.", code: "NOT_ENOUGH_SPACE")
+    }
+    let network = chain.contains {
+      $0.domain == NSURLErrorDomain
+        || $0.domain.contains("Cloud")
+        || ($0.domain == PHPhotosErrorDomain
+          && ($0.code == PHPhotosError.Code.networkAccessRequired.rawValue
+            || $0.code == PHPhotosError.Code.networkError.rawValue))
+    }
+    if network {
       return Exception(name: "ICloudDownloadFailed", description: "Couldn't download this item from iCloud.", code: "ICLOUD_DOWNLOAD_FAILED")
     }
-    return Exception(name: "ExportFailed", description: nsError.localizedDescription, code: "EXPORT_FAILED")
+    return Exception(name: "ExportFailed", description: (error as NSError).localizedDescription, code: "EXPORT_FAILED")
   }
+
+  /// The error and the errors it wraps: PhotoKit often reports network and disk failures as an underlying error.
+  static func errorChain(_ error: NSError) -> [NSError] {
+    var chain = [error]
+    while chain.count < 5, let underlying = chain.last?.userInfo[NSUnderlyingErrorKey] as? NSError {
+      chain.append(underlying)
+    }
+    return chain
+  }
+
 }
