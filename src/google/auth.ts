@@ -1,11 +1,7 @@
-import {
-  GoogleSignin,
-  isErrorWithCode,
-  isSuccessResponse,
-  statusCodes,
-  type User,
-} from '@react-native-google-signin/google-signin';
+import { GoogleSignin, isSuccessResponse, type User } from '@react-native-google-signin/google-signin';
 import Constants from 'expo-constants';
+
+import { needsSignInAgain } from './token-errors';
 
 /** Lets the app see only files and folders it creates in the user's Drive. */
 export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file';
@@ -81,7 +77,7 @@ export function createGoogleAuth(): GoogleAuth {
         const { accessToken } = await GoogleSignin.getTokens();
         return accessToken;
       } catch (error) {
-        if (isErrorWithCode(error) && error.code === statusCodes.SIGN_IN_REQUIRED) {
+        if (needsSignInAgain(error)) {
           throw new GoogleAuthError('Sign in to Google again to continue.', true);
         }
         throw error;
