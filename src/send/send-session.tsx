@@ -4,9 +4,10 @@ import { useStore } from 'zustand';
 import { createStore } from 'zustand/vanilla';
 
 import type { GoogleAccount, GoogleAuth } from '@/google/auth';
+import { messageOf } from '@/lib/errors';
 import { useLibrary } from '@/library/library-store-provider';
 import { useService } from '@/services';
-import { createTransferQueue, type TransferQueue, type TransferState } from '@/transfer/queue';
+import { createTransferQueue, sentItems, type TransferQueue, type TransferState } from '@/transfer/queue';
 
 export type SendSessionState = {
   status: 'checking' | 'signedOut' | 'signedIn';
@@ -42,7 +43,7 @@ function createSendSession(auth: GoogleAuth) {
         const account = await auth.signIn();
         set(account ? { status: 'signedIn', account } : {});
       } catch (error) {
-        set({ error: error instanceof Error ? error.message : 'Couldn’t sign in to Google.' });
+        set({ error: messageOf(error, 'Couldn’t sign in to Google.') });
       } finally {
         set({ signingIn: false });
       }
@@ -81,9 +82,9 @@ export function SendSessionProvider({ children }: { children: ReactNode }) {
       value.queue.stop();
       // However the modal closes (Done, swipe-down, Cancel), only items that actually reached Drive stay selected,
       // so a follow-up delete can never remove an item that wasn't copied.
-      const { items, statuses } = value.queue.store.getState();
-      if (items.length > 0) {
-        keepSelected(items.filter((item) => statuses[item.id]?.state === 'sent').map((item) => item.id));
+      const transfer = value.queue.store.getState();
+      if (transfer.items.length > 0) {
+        keepSelected(sentItems(transfer).map((item) => item.id));
       }
     };
   }, [value, keepSelected]);

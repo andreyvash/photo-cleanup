@@ -13,14 +13,11 @@ import {
 
 import PhotoResources from '../../modules/photo-resources/src/PhotoResourcesModule';
 
+import { assetUri, toLocalIdentifier } from './asset-uri';
 import type { PermissionState, PhotoLibrary } from './photoLibrary';
 import type { LibraryItem } from './types';
 
 const PAGE_SIZE = 1000;
-const URI_PREFIX = 'ph://';
-
-/** expo-media-library ids are `ph://<localIdentifier>`; the app uses the bare PhotoKit local identifier. */
-const toLocalIdentifier = (id: string) => (id.startsWith(URI_PREFIX) ? id.slice(URI_PREFIX.length) : id);
 
 function toPermission(response: PermissionResponse): PermissionState {
   if (response.status === 'granted') {
@@ -79,7 +76,7 @@ export function createExpoPhotoLibrary(): PhotoLibrary {
 
     deleteItems: async (ids) => {
       try {
-        await Asset.delete(ids.map((id) => new Asset(`${URI_PREFIX}${id}`)));
+        await Asset.delete(ids.map((id) => new Asset(assetUri(id))));
         return 'deleted';
       } catch (error) {
         if (isUserCancellation(error)) return 'cancelled';

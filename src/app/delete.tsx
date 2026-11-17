@@ -1,5 +1,4 @@
 import * as Haptics from 'expo-haptics';
-import { Image } from 'expo-image';
 import { useRouter } from 'expo-router';
 import { SymbolView, type SFSymbol } from 'expo-symbols';
 import { useState } from 'react';
@@ -7,10 +6,12 @@ import { StyleSheet, Text, View } from 'react-native';
 import { useShallow } from 'zustand/react/shallow';
 
 import { Button } from '@/components/button';
+import { Thumbnail, thumbnailFrame } from '@/components/thumbnail';
+import { messageOf } from '@/lib/errors';
 import { formatCount } from '@/lib/format';
 import { useLibrary } from '@/library/library-store-provider';
 import { describeItems } from '@/library/selection';
-import { colors, radius, spacing, tabularNumbers, type } from '@/theme';
+import { colors, spacing, tabularNumbers, type } from '@/theme';
 
 const MAX_THUMBNAILS = 7;
 
@@ -38,7 +39,7 @@ export default function DeleteReviewSheet() {
         router.back();
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Something went wrong.');
+      setError(messageOf(e));
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setDeleting(false);
@@ -57,10 +58,10 @@ export default function DeleteReviewSheet() {
       {/* A plain row: a ScrollView here would be adopted by the form sheet as its scrolling content. */}
       <View style={styles.thumbnails}>
         {selectedIds.slice(0, MAX_THUMBNAILS).map((id) => (
-          <Image key={id} source={{ uri: `ph://${id}` }} contentFit="cover" style={styles.thumbnail} />
+          <Thumbnail key={id} id={id} />
         ))}
         {selectedIds.length > MAX_THUMBNAILS ? (
-          <View style={[styles.thumbnail, styles.more]}>
+          <View style={[thumbnailFrame, styles.more]}>
             <Text style={styles.moreText}>+{selectedIds.length - MAX_THUMBNAILS}</Text>
           </View>
         ) : null}
@@ -95,7 +96,6 @@ const styles = StyleSheet.create({
   title: { ...type.title2, color: colors.label, textAlign: 'center' },
   summary: { ...type.subheadline, ...tabularNumbers, color: colors.secondaryLabel },
   thumbnails: { flexDirection: 'row', justifyContent: 'center', paddingHorizontal: spacing.xl, gap: spacing.xs },
-  thumbnail: { width: 44, height: 44, borderRadius: radius.thumb, borderCurve: 'continuous', backgroundColor: colors.placeholder },
   more: { alignItems: 'center', justifyContent: 'center', backgroundColor: colors.fill },
   moreText: { ...type.subheadline, ...tabularNumbers, fontWeight: '600', color: colors.secondaryLabel },
   warnings: { paddingHorizontal: spacing.xl, gap: spacing.m },

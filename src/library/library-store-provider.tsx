@@ -18,10 +18,15 @@ export function LibraryStoreProvider({ children }: { children: ReactNode }) {
   return <LibraryStoreContext.Provider value={store}>{children}</LibraryStoreContext.Provider>;
 }
 
-export function useLibrary<T>(selector: (state: LibraryState) => T): T {
+/** The store itself, for reading state at the moment of an action without re-rendering on every change. */
+export function useLibraryStore(): LibraryStore {
   const store = useContext(LibraryStoreContext);
   if (!store) {
     throw new Error('useLibrary must be used inside LibraryStoreProvider');
   }
-  return useStore(store, selector);
+  return store;
+}
+
+export function useLibrary<T>(selector: (state: LibraryState) => T): T {
+  return useStore(useLibraryStore(), selector);
 }

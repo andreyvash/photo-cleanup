@@ -2,6 +2,7 @@ import { createStore, type StoreApi } from 'zustand/vanilla';
 
 import type { DriveClient } from '@/drive/client';
 import { DriveError, type DriveErrorKind } from '@/drive/errors';
+import { messageOf } from '@/lib/errors';
 
 export type ExportedFile = { uri: string; filename: string; mimeType: string; size: number };
 
@@ -47,6 +48,17 @@ const NOTHING_TO_COPY = 'Nothing to copy for this item.';
 /** Errors that would fail every remaining item too, so the queue stops instead of exporting them. */
 const HALTING_ERRORS = new Set<DriveErrorKind>(['quota', 'auth', 'folderMissing', 'unavailable']);
 
+export const isBusy = ({ phase }: Pick<TransferState, 'phase'>) => phase === 'running' || phase === 'stopping';
+
+export const isRetryable = (status: TransferStatus | undefined) =>
+  status?.state === 'failed' || status?.state === 'notSent';
+
+/** The items that reached Drive: the only ones a later delete may remove. */
+export const sentItems = ({ items, statuses }: Pick<TransferState, 'items' | 'statuses'>) =>
+  items.filter((item) => statuses[item.id]?.state === 'sent');
+
+const percent = (fraction: number) => Math.round(fraction * 100);
+
 /**
  * Sends items to a Drive folder one at a time, in order. Each item is exported to a temp directory, every one of
  * its files is uploaded, and the temp directory is always discarded afterwards. Never deletes from the photo library.
@@ -55,7 +67,17 @@ export function createTransferQueue(deps: { drive: Pick<DriveClient, 'uploadFile
   const store = createStore<TransferState>()(() => ({ phase: 'idle', folder: null, items: [], statuses: {} }));
   let controller: AbortController | null = null;
 
+  /** Progress is shown in whole percent, so a change within the same percent isn't published. */
   function setStatus(id: string, status: TransferStatus): void {
+    const current = store.getState().statuses[id];
+    if (
+      current?.state === status.state &&
+      'progress' in current &&
+      'progress' in status &&
+      percent(current.progress) === percent(status.progress)
+    ) {
+      return;
+    }
     store.setState((state) => ({ statuses: { ...state.statuses, [id]: status } }));
   }
 
@@ -128,13 +150,11 @@ export function createTransferQueue(deps: { drive: Pick<DriveClient, 'uploadFile
     }
   }
 
-  const isBusy = () => store.getState().phase === 'running' || store.getState().phase === 'stopping';
-
   return {
     store,
 
     async start(items, folder) {
-      if (isBusy()) return;
+      if (isBusy(store.getState())) return;
       store.setState({ items, folder, statuses: {} });
       await run(
         items.map((item) => item.id),
@@ -149,18 +169,11 @@ export function createTransferQueue(deps: { drive: Pick<DriveClient, 'uploadFile
     },
 
     async retryFailed() {
-      if (isBusy()) return;
+      if (isBusy(store.getState())) return;
       const { folder, items, statuses } = store.getState();
       if (!folder) return;
-      const ids = items
-        .map((item) => item.id)
-        .filter((id) => statuses[id]?.state === 'failed' || statuses[id]?.state === 'notSent');
+      const ids = items.filter((item) => isRetryable(statuses[item.id])).map((item) => item.id);
       await run(ids, folder.id);
     },
   };
-}
-
-function messageOf(error: unknown): string {
-  const message = (error as { message?: unknown } | null)?.message;
-  return typeof message === 'string' && message.length > 0 ? message : 'Something went wrong.';
 }

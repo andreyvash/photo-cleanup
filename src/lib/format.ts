@@ -25,8 +25,12 @@ export function formatBytes(bytes: number | null): string {
   return bytes === 0 ? '0 KB' : '1 KB';
 }
 
+export function formatNumber(value: number): string {
+  return numberFormats[0].format(value);
+}
+
 export function formatCount(count: number, singular: string, plural: string): string {
-  return `${numberFormats[0].format(count)} ${count === 1 ? singular : plural}`;
+  return `${formatNumber(count)} ${count === 1 ? singular : plural}`;
 }
 
 export function formatDuration(seconds: number): string {

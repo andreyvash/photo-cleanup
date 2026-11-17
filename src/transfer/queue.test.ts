@@ -2,11 +2,10 @@
 import { afterEach, beforeEach, describe, expect, it } from '@jest/globals';
 import type { StoreApi } from 'zustand/vanilla';
 
-import { createDriveClient } from '@/drive/client';
-import { createTransferQueue, type TransferItem, type TransferState } from './queue';
+import { createTransferQueue, type Exporter, type TransferItem, type TransferState } from './queue';
+import { driveClientFor } from '../../test/support/driveClient';
 import { FakeDrive } from '../../test/support/fakeDrive';
 import { FakeExporter } from '../../test/support/fakeExporter';
-import { nodeFetch, nodeTransport } from '../../test/support/nodeTransport';
 
 let drive: FakeDrive;
 let exporter: FakeExporter;
@@ -23,15 +22,8 @@ afterEach(async () => {
   await exporter.dispose();
 });
 
-function makeQueue() {
-  const client = createDriveClient({
-    getAccessToken: async () => drive.validToken,
-    transport: nodeTransport,
-    fetch: nodeFetch,
-    baseUrl: drive.baseUrl,
-    sleep: async () => {},
-  });
-  return createTransferQueue({ drive: client, exporter });
+function makeQueue(withExporter: Exporter = exporter) {
+  return createTransferQueue({ drive: driveClientFor(drive), exporter: withExporter });
 }
 
 function photo(id: string, filename: string, size: number): TransferItem {
@@ -257,6 +249,27 @@ describe('transfer queue', () => {
 
     expect(queue.store.getState().statuses).toEqual({ a: { state: 'sent' }, b: { state: 'sent' }, c: { state: 'sent' } });
     expect(namesInDrive()).toEqual(['IMG_0001.JPG', 'IMG_0002.JPG', 'IMG_0003.JPG']);
+  });
+
+  it('publishes progress only when the percentage shown changes', async () => {
+    const steppingExporter: Exporter = {
+      exportForUpload: async (id, onProgress) => {
+        for (const fraction of [0.001, 0.002, 0.004, 0.5, 0.501, 1]) onProgress(fraction);
+        return exporter.exportForUpload(id, () => {});
+      },
+      discard: (directory) => exporter.discard(directory),
+    };
+    const queue = makeQueue(steppingExporter);
+    const published: number[] = [];
+    queue.store.subscribe(({ statuses }, previous) => {
+      const status = statuses.a;
+      if (status !== previous.statuses.a && status?.state === 'downloading') published.push(status.progress);
+    });
+
+    await queue.start([photo('a', 'IMG_0001.JPG', 120_000)], folder);
+
+    expect(published).toEqual([0, 0.5, 1]);
+    expect(queue.store.getState().statuses.a).toEqual({ state: 'sent' });
   });
 
   describe('an item with two files (Live Photo)', () => {

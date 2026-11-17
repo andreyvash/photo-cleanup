@@ -4,6 +4,7 @@ import { memo } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { formatBytes, formatDuration } from '@/lib/format';
+import { assetUri } from '@/library/asset-uri';
 import type { LibraryItem } from '@/library/types';
 import { colors, radius, spacing, tabularNumbers, type } from '@/theme';
 
@@ -42,7 +43,7 @@ export const LibraryTile = memo(function LibraryTile({
       onPress={() => onOpen(item.id)}
       style={({ pressed }) => [{ width: tileSize, height: tileSize }, pressed && styles.pressed]}>
       <Image
-        source={{ uri: `ph://${item.id}` }}
+        source={{ uri: assetUri(item.id) }}
         recyclingKey={item.id}
         contentFit="cover"
         transition={0}

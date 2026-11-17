@@ -8,6 +8,7 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { MessageView } from '@/components/message-view';
 import { formatBytes, formatDuration } from '@/lib/format';
+import { assetUri } from '@/library/asset-uri';
 import { useLibrary } from '@/library/library-store-provider';
 import type { LibraryItem } from '@/library/types';
 import { colors, spacing, tabularNumbers, type } from '@/theme';
@@ -26,7 +27,7 @@ function VideoPreview({ id }: { id: string }) {
   const player = useVideoPlayer(null);
   useEffect(() => {
     // Photo-library videos can only be loaded with replaceAsync.
-    void player.replaceAsync({ uri: `ph://${id}` });
+    void player.replaceAsync({ uri: assetUri(id) });
   }, [player, id]);
   return <VideoView player={player} nativeControls contentFit="contain" style={styles.media} />;
 }
@@ -72,7 +73,7 @@ export default function AssetPreviewScreen() {
       {item.mediaType === 'video' ? (
         <VideoPreview id={item.id} />
       ) : (
-        <Image source={{ uri: `ph://${item.id}` }} contentFit="contain" style={styles.media} transition={150} />
+        <Image source={{ uri: assetUri(item.id) }} contentFit="contain" style={styles.media} transition={150} />
       )}
 
       <View style={[styles.info, { paddingBottom: insets.bottom + spacing.m }]}>

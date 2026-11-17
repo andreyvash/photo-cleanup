@@ -1,7 +1,6 @@
 import { Host } from '@expo/ui';
 import { ProgressView } from '@expo/ui/swift-ui';
 import * as Haptics from 'expo-haptics';
-import { Image } from 'expo-image';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { Stack, useRouter } from 'expo-router';
 import { SymbolView } from 'expo-symbols';
@@ -11,10 +10,12 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useShallow } from 'zustand/react/shallow';
 
 import { Button } from '@/components/button';
-import { formatBytes, formatCount } from '@/lib/format';
+import { THUMBNAIL_SIZE, Thumbnail } from '@/components/thumbnail';
+import { formatBytes, formatCount, formatNumber } from '@/lib/format';
+import { formatTotal, totalSize } from '@/library/selection';
 import { useTransfer, useTransferQueue } from '@/send/send-session';
-import { colors, radius, spacing, tabularNumbers, type } from '@/theme';
-import type { TransferItem, TransferStatus } from '@/transfer/queue';
+import { colors, spacing, tabularNumbers, type } from '@/theme';
+import { isBusy, isRetryable, sentItems, type TransferItem, type TransferStatus } from '@/transfer/queue';
 
 const KEEP_AWAKE_TAG = 'send-to-drive';
 
@@ -37,10 +38,10 @@ function statusText(status: TransferStatus | undefined): string {
 
 function StatusRow({ item, status }: { item: TransferItem; status: TransferStatus | undefined }) {
   const state = status?.state ?? 'waiting';
-  const problem = state === 'failed' || state === 'notSent';
+  const problem = isRetryable(status);
   return (
     <View style={styles.row} accessible accessibilityLabel={`${item.filename ?? 'Item'}, ${statusText(status)}`}>
-      <Image source={{ uri: `ph://${item.id}` }} contentFit="cover" style={styles.thumbnail} />
+      <Thumbnail id={item.id} />
       <View style={styles.rowText}>
         <Text style={styles.filename} numberOfLines={1}>
           {item.filename ?? 'Untitled'}
@@ -66,14 +67,16 @@ export default function TransferProgressScreen() {
     useShallow((s) => ({ phase: s.phase, folder: s.folder, items: s.items, statuses: s.statuses })),
   );
 
-  const sentIds = items.filter((item) => statuses[item.id]?.state === 'sent').map((item) => item.id);
-  const retryable = items.filter((item) => ['failed', 'notSent'].includes(statuses[item.id]?.state ?? '')).length;
-  const busy = phase === 'running' || phase === 'stopping';
-  const sentBytes = items
-    .filter((item) => statuses[item.id]?.state === 'sent')
-    .reduce((total, item) => total + (item.size ?? 0), 0);
-  const totalBytes = items.reduce((total, item) => total + (item.size ?? 0), 0);
-  const progress = items.length === 0 ? 0 : sentIds.length / items.length;
+  const sent = sentItems({ items, statuses });
+  const retryable = items.filter((item) => isRetryable(statuses[item.id])).length;
+  const busy = isBusy({ phase });
+  const total = totalSize(items.map((item) => item.size));
+  const sizeText =
+    total.unknownCount === total.count
+      ? null
+      : `${formatBytes(totalSize(sent.map((item) => item.size)).bytes)} of ${formatTotal(total)}`;
+  const detail = [sizeText, folder ? `to “${folder.name}”` : null].filter(Boolean).join(' · ');
+  const progress = items.length === 0 ? 0 : sent.length / items.length;
 
   useEffect(() => {
     if (!busy) return;
@@ -109,12 +112,9 @@ export default function TransferProgressScreen() {
         ListHeaderComponent={
           <View style={styles.header}>
             <Text style={styles.count} accessibilityRole="header">
-              {sentIds.length} of {items.length} sent
+              {formatNumber(sent.length)} of {formatNumber(items.length)} sent
             </Text>
-            <Text style={styles.detail}>
-              {formatBytes(sentBytes)} of {formatBytes(totalBytes)}
-              {folder ? ` · to “${folder.name}”` : ''}
-            </Text>
+            <Text style={styles.detail}>{detail}</Text>
             <Host matchContents={{ vertical: true }} style={styles.progress}>
               <ProgressView value={progress} />
             </Host>
@@ -154,8 +154,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.s + 2,
     backgroundColor: colors.card,
   },
-  separator: { height: StyleSheet.hairlineWidth, backgroundColor: colors.separator, marginLeft: spacing.l + 44 + spacing.m },
-  thumbnail: { width: 44, height: 44, borderRadius: radius.thumb, borderCurve: 'continuous', backgroundColor: colors.placeholder },
+  separator: { height: StyleSheet.hairlineWidth, backgroundColor: colors.separator, marginLeft: spacing.l + THUMBNAIL_SIZE + spacing.m },
   rowText: { flex: 1, gap: 2 },
   filename: { ...type.body, color: colors.label },
   status: { ...type.footnote, ...tabularNumbers, color: colors.secondaryLabel },

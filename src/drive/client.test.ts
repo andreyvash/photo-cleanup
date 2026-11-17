@@ -6,9 +6,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-import { createDriveClient } from './client';
+import { driveClientFor } from '../../test/support/driveClient';
 import { FakeDrive } from '../../test/support/fakeDrive';
-import { nodeFetch, nodeTransport } from '../../test/support/nodeTransport';
 
 let drive: FakeDrive;
 let scratch: string;
@@ -23,14 +22,8 @@ afterEach(async () => {
   await rm(scratch, { recursive: true, force: true });
 });
 
-function connect(getAccessToken: () => Promise<string> = async () => drive.validToken) {
-  return createDriveClient({
-    getAccessToken,
-    transport: nodeTransport,
-    fetch: nodeFetch,
-    baseUrl: drive.baseUrl,
-    sleep: async () => {},
-  });
+function connect(getAccessToken?: () => Promise<string>) {
+  return driveClientFor(drive, getAccessToken);
 }
 
 async function localFile(name: string, size: number): Promise<string> {

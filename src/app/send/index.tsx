@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { Image } from 'expo-image';
 import { Stack, useRouter } from 'expo-router';
 import { ActivityIndicator, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -7,12 +6,13 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { Button } from '@/components/button';
 import { GroupedRow, GroupedSection } from '@/components/grouped-list';
+import { Thumbnail } from '@/components/thumbnail';
 import { formatCount } from '@/lib/format';
-import { useLibrary } from '@/library/library-store-provider';
+import { useLibrary, useLibraryStore } from '@/library/library-store-provider';
 import { describeItems } from '@/library/selection';
 import { useSendSession, useTransferQueue } from '@/send/send-session';
 import { useService } from '@/services';
-import { colors, radius, spacing, tabularNumbers, type } from '@/theme';
+import { colors, spacing, tabularNumbers, type } from '@/theme';
 
 const THUMBNAILS = 8;
 
@@ -21,9 +21,8 @@ export default function SendScreen() {
   const insets = useSafeAreaInsets();
   const drive = useService('drive');
   const queue = useTransferQueue();
-  const { selectedIds, sizes, items } = useLibrary(
-    useShallow((s) => ({ selectedIds: s.selectedIds, sizes: s.sizes, items: s.items })),
-  );
+  const library = useLibraryStore();
+  const { selectedIds, sizes } = useLibrary(useShallow((s) => ({ selectedIds: s.selectedIds, sizes: s.sizes })));
   const session = useSendSession(
     useShallow((s) => ({
       status: s.status,
@@ -46,10 +45,8 @@ export default function SendScreen() {
 
   function send() {
     if (!folder) return;
-    const transferItems = selectedIds.map((id) => {
-      const item = items.find((candidate) => candidate.id === id);
-      return { id, filename: item?.filename ?? null, size: sizes[id] ?? null };
-    });
+    const filenames = new Map(library.getState().items.map((item) => [item.id, item.filename]));
+    const transferItems = selectedIds.map((id) => ({ id, filename: filenames.get(id) ?? null, size: sizes[id] ?? null }));
     void queue.start(transferItems, { id: folder.id, name: folder.name });
     router.replace('/send/progress');
   }
@@ -63,7 +60,7 @@ export default function SendScreen() {
         <View style={styles.summary}>
           <View style={styles.thumbnails}>
             {selectedIds.slice(0, THUMBNAILS).map((id) => (
-              <Image key={id} source={{ uri: `ph://${id}` }} contentFit="cover" style={styles.thumbnail} />
+              <Thumbnail key={id} id={id} />
             ))}
           </View>
           <Text style={styles.summaryText}>{describeItems(selectedIds, sizes)}</Text>
@@ -144,7 +141,6 @@ const styles = StyleSheet.create({
   content: { paddingVertical: spacing.l, gap: spacing.xl },
   summary: { alignItems: 'center', gap: spacing.m, paddingHorizontal: spacing.l },
   thumbnails: { flexDirection: 'row', gap: spacing.xs, flexWrap: 'wrap', justifyContent: 'center' },
-  thumbnail: { width: 44, height: 44, borderRadius: radius.thumb, borderCurve: 'continuous', backgroundColor: colors.placeholder },
   summaryText: { ...type.headline, ...tabularNumbers, color: colors.label },
   loading: { marginTop: spacing.xl },
   signIn: { paddingHorizontal: spacing.xl, gap: spacing.l },
