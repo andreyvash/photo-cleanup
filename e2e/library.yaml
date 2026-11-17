@@ -1,0 +1,40 @@
+# Seed first: scripts/seed-simulator.sh <udid>
+# Fixtures (oldest → newest): photo_small 429 KB, video_short 6 MB, photo_large 10.8 MB, photo_medium 2.7 MB,
+# video_long 25.8 MB. iOS also adds 6 sample photos (1.3–2.8 MB) to every simulator, so assertions avoid totals
+# that include them: the three largest items and the smallest are always fixtures.
+appId: dev.photocleanup.app
+name: Browse, filter, sort and preview
+---
+- launchApp:
+    permissions:
+      photos: allow
+- extendedWaitUntil:
+    visible: "Video, 25.8 MB, 0:10"
+    timeout: 30000
+
+# Largest first: the first two tiles are the two biggest fixtures.
+- tapOn:
+    id: "library-tile"
+    index: 0
+- assertVisible: "25.8 MB"
+- tapOn: "Back"
+- tapOn:
+    id: "library-tile"
+    index: 1
+- assertVisible: "10.8 MB"
+- tapOn: "Back"
+
+# Filter to videos: only the two video fixtures.
+- tapOn: "Videos"
+- assertVisible: "2 items · 31.8 MB"
+- assertNotVisible: "Photo, 10.8 MB"
+- tapOn: "All"
+
+# Newest first: the second tile becomes photo_medium (2.7 MB), added just before video_long.
+- tapOn: "Sort By"
+- tapOn: "Newest First"
+- tapOn:
+    id: "library-tile"
+    index: 1
+- assertVisible: "2.7 MB"
+- tapOn: "Back"

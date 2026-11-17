@@ -1,0 +1,105 @@
+# Noridoc: library
+
+Path: @/src/library
+
+### Overview
+- Everything about the device photo library as the app sees it:
+  - the `PhotoLibrary` boundary interface;
+  - its production adapter, built on expo-media-library and PhotoResources;
+  - the app-wide library store, which holds permission, items, sizes, filter and sort, the selection, whether the last read failed, and notices.
+- The folder also holds the pure logic that orders items and adds up and describes a set of them, as in "3 items · 41.2 MB + 1 unknown"; `useGridItems`, the hook that gives the Library grid its items and holds their order steady while sizes are still being measured; and `asset-uri.ts`, the one place that knows the `ph://` URI scheme.
+
+### How it fits into the larger codebase
+- `PhotoLibrary` (in `photoLibrary.ts`) is a service boundary in `@/src/services.tsx`. The production `createExpoPhotoLibrary()` is only `require`d the first time it's needed, and tests swap in `FakePhotoLibrary` from `@/test/support`.
+- `LibraryStoreProvider` wraps the whole navigator in `@/src/app/_layout.tsx`. The Library screen, the Library header (`@/src/components/library-header.tsx`), the preview, the delete sheet and the Send modal all share one store:
+  - `useLibrary(selector)` subscribes to part of the store.
+  - `useLibraryStore()` returns the store itself, for reading state at the moment of an action without re-rendering on every change. The Send screen uses it to read filenames from `items` when Send is tapped.
+- The store is how the flows hand off to each other:
+  - The Send screen subscribes to `selectedIds` and `sizes` and reads `items` once to build transfer items.
+  - `SendSessionProvider` (`@/src/send/send-session.tsx`) calls `keepSelected` with the IDs that reached Drive when the Send modal unmounts, however it was closed.
+  - The delete sheet calls `deleteSelected`.
+- `canRead(permission)` (`granted` or `limited`) is exported from `store.ts`; the Library screen uses it to hide the sort menu.
+- Sizes come from `@/modules/photo-resources` (`getSizes`), the only PhotoResources function the adapter uses. Text formatting comes from `@/src/lib/format.ts`: decimal units like iOS Settings, and "Size unavailable" for null.
+- IDs are bare PhotoKit local identifiers everywhere. `asset-uri.ts` converts at the edges:
+  - `assetUri(id)` builds `ph://<id>`, the URI expo-image, expo-video and expo-media-library's `Asset` take. UI code (the tile, the preview, `Thumbnail`) and the adapter's delete use it.
+  - `toLocalIdentifier(uri)` strips the prefix from expo-media-library's IDs, when listing and in change events.
+
+### Core Implementation
+- `SizeMap` (in `types.ts`) has three possible states per ID: a number (bytes), `null` (couldn't be measured), or no entry (not measured yet). The UI depends on the difference:
+  - Tiles hide the size pill while there's no entry.
+  - The preview shows "Measuring…".
+  - `totalSize` counts both null and missing sizes as unknown.
+- `selection.ts` describes a set of items in three layers:
+  - `totalSize(sizes)` adds up an iterable of sizes into `{ count, bytes, unknownCount }`.
+  - `formatTotal(total)` turns that into "41.2 MB + 1 unknown", or "Size unavailable" when no size in a non-empty set is known.
+  - `describeItems(ids, sizes)` is "N items · " followed by `formatTotal`. The Library screen (for its header and the selection bar), the delete sheet and the Send screen use it. The transfer progress header (`@/src/app/send/progress.tsx`) uses `totalSize` and `formatTotal` directly on the transfer items' sizes.
+- `createLibraryStore(library, { sizeBatchSize = 500 })` returns a zustand vanilla store. Every load goes through `reload()`, which reads the permission without prompting and applies it:
+  - `start()` is just `reload()`.
+  - `requestAccess()` calls `requestPermission()` (iOS's prompt) and then `reload()`, which reads the resulting permission again.
+  - Library change events call `reload()`.
+
+  The store subscribes to library changes the first time access turns out to be readable, not before.
+- With `granted` or `limited` access, a load:
+  1. lists every item;
+  2. keeps the sizes it already knows for items that are still there;
+  3. removes vanished items from `selectedIds` and clears `readFailed`;
+  4. measures only the IDs without a size, in batches, updating `sizing: { done, total }` after each batch and setting it to null when finished.
+
+  Every finished batch re-renders the grid, so a load uses at most `MAX_SIZE_BATCHES` (20) batches: the batch size is `max(sizeBatchSize, ceil(toMeasure / MAX_SIZE_BATCHES))`. Up to `MAX_SIZE_BATCHES × sizeBatchSize` items are measured in `sizeBatchSize` chunks; beyond that the batches grow instead of multiplying.
+
+  Without read access, the store clears items, sizes, the selection and `readFailed`.
+- `selectedIds` is always a subset of `items`. Every place that changes `items` (a load, a change event's deletions, `deleteSelected`) goes through the private `withItems(state, items)`, which returns the new items together with the selection filtered to them.
+- Reloads run one at a time, coordinated by closure variables (`running`, `reloadRequested`) rather than store state:
+
+```
+change event ─▶ reload() ── running? ──yes──▶ reloadRequested = true, return the running promise
+                                │
+                                no
+                                ▼
+                 do { reloadRequested = false; apply(getPermission()) } while (reloadRequested)
+```
+
+  However many events arrive during a reload (an iCloud sync can send many), exactly one follow-up reload runs after it. A reload is never restarted or abandoned partway, so every measured batch is merged into `sizes`. Sizes are facts about an item, so a batch is never thrown away because the library changed meanwhile. The follow-up reload then measures only what is still missing.
+- A change event's `deletedIds` are removed from `items` and `selectedIds` immediately, in the event handler, before the reload starts. A deleted item can't stay visible or selected while a long reload is still in progress.
+- Error handling:
+  - A `listItems` failure sets `readFailed: true` and `sizing: null`, and leaves the existing items in place. Any other failure inside a reload (for example reading the permission) does the same. The Library header shows "Couldn’t read your photo library." while `readFailed` is true, and the next successful list clears it.
+  - A `getSizes` failure marks that batch's IDs as `null` ("Size unavailable"), and measuring continues with the next batch.
+- `deleteSelected()` passes `selectedIds` as they are to `PhotoLibrary.deleteItems`, which shows iOS's own confirmation. It relies on the subset invariant above rather than re-checking the IDs against `items`.
+  - `'cancelled'` changes nothing. That's the result when the user declines, or when nothing is selected.
+  - `'deleted'` removes the items from `items` and, through `withItems`, from the selection, and sets a one-time `notice` ("Moved N items to Recently Deleted.").
+  - Any other error is passed back to the caller.
+- `toggleSelection` keeps IDs in the order the user picked them. `keepSelected(ids)` narrows the selection to the IDs it's given. The selection doesn't depend on the filter, so items the filter hides stay selected.
+- `visibleItems` (in `sortFilter.ts`) filters by kind and sorts in one of two ways:
+  - Largest first, with unknown sizes last and ties going to the newer item.
+  - Newest first, with undated items last.
+
+  `useGridItems` computes this list for the screen. The store only holds the `filter` and `sort` choices.
+- Grid items (`use-grid-items.ts`, `stableOrder.ts`, used by `@/src/app/index.tsx`): while sizes are still being measured in "Largest first", every newly measured batch would reorder the grid under the user's finger. `useGridItems(items, sizes, { filter, sort }, measuring)` runs `visibleItems` itself and decides when to re-sort. The screen passes `measuring` as `sizing !== null`. The hook derives these inputs on each render:
+
+  | Input | Value | Effect |
+  |---|---|---|
+  | `sortSizes` | `sizes` in "Largest first", `null` in "Newest first" | Size updates can't change a newest-first order, so they're ignored there |
+  | `resetKey` | `"<filter>:<sort>"` | A change re-sorts immediately, even while measuring |
+  | `frozen` | `measuring && sort === 'largest'` | While true, the order is held |
+
+  - It returns the previous result unchanged when the reset key, the `items` array and `frozen` are all the same, and either the grid is frozen or `sortSizes` is the same object. So nothing is re-sorted when only sizes change in "Newest first" or while the grid is held.
+  - Otherwise it runs `visibleItems`. While frozen (and not reset), it passes the result through `stableOrder(previous, sorted)`, which keeps the previous order for items that are still present (using their current objects), drops removed ones, and appends new ones in sorted order. A tap therefore never lands on a tile that just moved.
+  - When measuring finishes, `frozen` turns false and the grid re-sorts once.
+  - The hook keeps its previous inputs and result in `useState` and updates them during render when something relevant changes.
+- The production adapter:
+  - maps permissions, treating `granted` with `accessPrivileges: 'limited'` as `limited`;
+  - lists everything with one `new Query().orderBy(CREATION_TIME, descending).exeForMetadata()`, with no limit or offset, because expo-media-library re-runs the whole PhotoKit fetch for every offset page;
+  - keeps only images and videos;
+  - converts video duration from milliseconds to seconds;
+  - passes `{ deletedIds }` to `subscribe` listeners, mapping the event's `deletedAssets` to bare local identifiers (an empty list when the event has none).
+
+### Things to Know
+- PhotoKit reports a declined delete as an error (`PHPhotosError.userCancelled`, 3072). The adapter turns any error whose message matches `3072` or "cancel" into `'cancelled'` and rethrows everything else.
+- After a delete, the store doesn't remove the deleted items' entries from `sizes` itself. The change event PhotoKit sends for the deletion triggers a reload, and the reload drops them.
+- `readFailed` and `notice` are separate. `readFailed` describes the last read, gets its own header banner with no dismiss button, and is cleared by the next successful read. `notice` is a one-off message after a delete that stays until the user dismisses it (`dismissNotice`).
+- `permission` starts as `'checking'`, a value that isn't a PhotoKit state. It lets the screen show only the header until the first permission check finishes.
+- The change subscription is created only once access is `granted` or `limited`, because observing a library the app isn't authorized for makes iOS show its photo-access prompt. That prompt should appear only when the user taps Allow Access (`requestAccess`). `FakePhotoLibrary` reproduces this with `systemPromptShown`. A `following` flag ensures the subscription is created only once. It is never removed; the store lives as long as the root layout.
+- With `limited` access, the list contains only the items the user shared. `manageAccess()` just opens iOS's limited-selection picker; the store relies on the change subscription to pick up the new selection.
+- When nothing in a set could be measured, `formatTotal` returns "Size unavailable" rather than a byte total with an unknown count, so `describeItems` reads "N items · Size unavailable".
+
+Created and maintained by Nori.

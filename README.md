@@ -1,56 +1,70 @@
-# Welcome to your Expo app 👋
+# Photo Cleanup
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+An iPhone app for finding the photos and videos that take up the most space, then copying them to Google Drive or deleting them from Photos.
 
-## Get started
+- **Browse:** every photo and video, filterable by Photos or Videos, with a preview on tap.
+- **Sort by size:** the size of each item, largest first. "Size unavailable" appears when iOS doesn't report one.
+- **Select in batches:** the count and combined size are always shown together.
+- **Send to Google Drive:** copies items into a folder the app created, with progress and status for each item and a retry for the ones that failed. Each item's original is copied along with any edited version (`IMG_1234-edited.jpg`), RAW file and Live Photo video. The items stay in Photos.
+- **Delete from Photos:** a review step comes first. Items go to Recently Deleted for 30 days, and with iCloud Photos on, they're deleted from your other devices too. Sending to Drive never deletes anything.
 
-1. Install dependencies
+Built with Expo SDK 58 (React Native 0.88), Expo Router, and a small local Swift module (`modules/photo-resources`). The module reads file sizes from PhotoKit and exports each item's files for upload, downloading from iCloud if needed.
 
-   ```bash
-   npm install
-   ```
+## Run it
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+Requirements: Xcode 26, CocoaPods, Node 22.13 or later.
 
 ```bash
-npm run reset-project
+npm install
+npx expo run:ios            # builds the dev client and starts Metro
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
+The app is iOS only and needs a development build. It doesn't run in Expo Go because of the native module and Google Sign-In.
 
-### Other setup steps
+### Google Drive setup (one time)
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+Sending to Drive needs your own Google OAuth client. Without one, the app still works, and Send to Drive explains that sign-in isn't set up.
 
-## Learn more
+1. In [Google Cloud Console](https://console.cloud.google.com/), create a project and enable the **Google Drive API**.
+2. Open **Google Auth Platform**:
+   - **Branding:** set the app name and support email.
+   - **Audience:** choose External, leave the publishing status on **Testing**, and add your Google account as a test user.
+   - **Data Access:** add the scope `https://www.googleapis.com/auth/drive.file`.
+3. Open **Clients**, create an **iOS** client, and set the bundle ID to `dev.photocleanup.app`. If you change the bundle ID, change it in `app.config.ts` too.
+4. Put the client ID in `.env.local`, which is gitignored:
+   ```
+   GOOGLE_IOS_CLIENT_ID=1234567890-abc123.apps.googleusercontent.com
+   ```
+5. Rebuild with `npx expo run:ios`. The URL scheme comes from the client ID at build time.
 
-To learn more about developing your project with Expo, look at the following resources:
+Notes:
+- With the `drive.file` scope, the app can only see folders and files it created. It can't browse the rest of your Drive.
+- While the OAuth app is in **Testing**, Google expires sign-ins after 7 days, so you'll be asked to sign in again about once a week.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## Test
 
-## Join the community
+```bash
+npm test                    # Jest: unit, integration (fake Drive HTTP server) and screen tests
+npm run typecheck
+```
 
-Join our community of developers creating universal apps.
+End-to-end tests use [Maestro](https://maestro.dev) on a simulator that has been seeded with fixtures of known sizes:
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```bash
+scripts/seed-simulator.sh <simulator-udid>   # erases the simulator, then adds 5 photos/videos
+maestro test e2e/library.yaml
+maestro test e2e/delete.yaml                 # deletes one fixture; re-seed afterwards
+```
+
+Google sign-in and real uploads can't be automated, because they need your account. Check them by hand: sign in, create a folder, send a few items, and confirm they appear in Drive.
+
+## Known limitations
+
+- **Edits arrive as a second file, not as an edit.** Drive gets the original and the edited version side by side. Photos' record of the edit isn't copied, so the edit can't be adjusted or reverted from the Drive copies.
+- **The bytes sent can be fewer than the size shown.** The size shown is everything Photos stores for an item, which is what deleting frees. That includes the edit record and, for some edited items, an intermediate render, and neither is sent.
+- Portrait depth and Live Photo effects (Loop, Bounce) are probably stored as edits too, so those items would arrive with an `-edited` file even if you never edited them. This hasn't been checked on a device yet.
+- **Stop can't interrupt an iCloud download in progress.** That item is finished first, then discarded. You can close the screen meanwhile.
+- A size comes from PhotoKit's undocumented `fileSize` resource key. If Apple removes it, sizes show as "Size unavailable" rather than crashing.
+- Retrying a failed upload starts that file over. Partial uploads aren't resumed.
+- If only some of an item's files made it to Drive (say the photo but not its Live Photo video), a retry uploads all of them again, so the ones that had arrived appear twice.
+- If the app is closed during a transfer, the queue isn't restored. Send the remaining items again.

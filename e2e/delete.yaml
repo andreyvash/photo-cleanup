@@ -1,0 +1,28 @@
+# Deletes the largest fixture (video_long, 25.8 MB). Re-seed afterwards: scripts/seed-simulator.sh <udid>
+appId: dev.photocleanup.app
+name: Select, review and delete from Photos
+---
+- launchApp:
+    permissions:
+      photos: allow
+- extendedWaitUntil:
+    visible: "Video, 25.8 MB, 0:10"
+    timeout: 30000
+
+- tapOn:
+    id: "select-toggle"
+    index: 0
+- assertVisible: "1 item · 25.8 MB"
+- tapOn: "Delete"
+
+- assertVisible: "Delete 1 Item?"
+- assertVisible: ".*other devices that use it.*"
+- assertVisible: ".*Recently Deleted.*"
+- tapOn: "Delete from Photos"
+
+# iOS's own confirmation ("Allow “Photo Cleanup” to delete this video?").
+- tapOn: "Delete"
+- extendedWaitUntil:
+    visible: "Moved 1 item to Recently Deleted."
+    timeout: 10000
+- assertNotVisible: "Video, 25.8 MB, 0:10"

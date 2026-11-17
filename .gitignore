@@ -41,3 +41,9 @@ example
 # generated native folders
 /ios
 /android
+
+# generated test fixtures
+e2e/fixtures/
+
+# downloaded third-party reference screenshots (local only)
+research/
