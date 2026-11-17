@@ -1,11 +1,11 @@
 /**
  * While sizes are still being measured, "largest first" would keep reshuffling the grid under the user's finger.
- * Frozen: keep the previous order for items that are still there, and append new ones in sorted order.
+ * Keeps the previous order for items that are still there (using their current objects), and appends new ones in
+ * sorted order.
  */
-export function stableOrder(previousIds: string[], sortedIds: string[], frozen: boolean): string[] {
-  if (!frozen) return sortedIds;
-  const present = new Set(sortedIds);
-  const kept = previousIds.filter((id) => present.has(id));
-  const known = new Set(kept);
-  return [...kept, ...sortedIds.filter((id) => !known.has(id))];
+export function stableOrder<T extends { id: string }>(previous: T[], sorted: T[]): T[] {
+  const current = new Map(sorted.map((item) => [item.id, item]));
+  const kept = previous.flatMap((item) => current.get(item.id) ?? []);
+  const keptIds = new Set(kept.map((item) => item.id));
+  return [...kept, ...sorted.filter((item) => !keptIds.has(item.id))];
 }

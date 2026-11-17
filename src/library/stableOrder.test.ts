@@ -1,16 +1,23 @@
 import { stableOrder } from './stableOrder';
 
-describe('stableOrder', () => {
-  it('uses the sorted order when nothing is being measured', () => {
-    expect(stableOrder(['a', 'b', 'c'], ['c', 'a', 'b'], false)).toEqual(['c', 'a', 'b']);
-  });
+const order = (previous: string[], sorted: string[]) =>
+  stableOrder(
+    previous.map((id) => ({ id })),
+    sorted.map((id) => ({ id })),
+  ).map((item) => item.id);
 
+describe('stableOrder', () => {
   it('keeps tiles where they are while sizes arrive, adding new ones at the end', () => {
     // "c" was just measured as the largest, and "d" just appeared.
-    expect(stableOrder(['a', 'b', 'c'], ['c', 'a', 'd', 'b'], true)).toEqual(['a', 'b', 'c', 'd']);
+    expect(order(['a', 'b', 'c'], ['c', 'a', 'd', 'b'])).toEqual(['a', 'b', 'c', 'd']);
   });
 
-  it('drops items that are gone, even while measuring', () => {
-    expect(stableOrder(['a', 'b', 'c'], ['c', 'a'], true)).toEqual(['a', 'c']);
+  it('drops items that are gone', () => {
+    expect(order(['a', 'b', 'c'], ['c', 'a'])).toEqual(['a', 'c']);
+  });
+
+  it('returns the current version of each item', () => {
+    const updated = { id: 'a', filename: 'new' };
+    expect(stableOrder([{ id: 'a', filename: 'old' }], [updated])[0]).toBe(updated);
   });
 });

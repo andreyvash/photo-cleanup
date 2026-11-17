@@ -13,8 +13,10 @@ export type LibraryState = {
   sizing: { done: number; total: number } | null;
   filter: LibraryFilter;
   sort: LibrarySort;
-  /** In the order the user selected them. */
+  /** In the order the user selected them. Always a subset of `items`. */
   selectedIds: string[];
+  /** The last attempt to read the library failed. */
+  readFailed: boolean;
   /** One-off message for the library screen, e.g. after a delete. */
   notice: string | null;
 
@@ -31,7 +33,16 @@ export type LibraryState = {
   dismissNotice(): void;
 };
 
-const canRead = (permission: PermissionState) => permission === 'granted' || permission === 'limited';
+export const canRead = (permission: LibraryState['permission']) => permission === 'granted' || permission === 'limited';
+
+/** Each measured batch re-renders the grid, so even a large library is measured in at most this many. */
+const MAX_SIZE_BATCHES = 20;
+
+/** Replaces the items and drops selected ids that are no longer among them. */
+function withItems(state: LibraryState, items: LibraryItem[]): Pick<LibraryState, 'items' | 'selectedIds'> {
+  const present = new Set(items.map((item) => item.id));
+  return { items, selectedIds: state.selectedIds.filter((id) => present.has(id)) };
+}
 
 export function createLibraryStore(library: PhotoLibrary, { sizeBatchSize = 500 }: { sizeBatchSize?: number } = {}) {
   let following = false;
@@ -44,7 +55,7 @@ export function createLibraryStore(library: PhotoLibrary, { sizeBatchSize = 500 
       try {
         items = await library.listItems();
       } catch {
-        set({ permission, sizing: null, notice: 'Couldn’t read your photo library.' });
+        set({ permission, sizing: null, readFailed: true });
         return;
       }
 
@@ -55,23 +66,24 @@ export function createLibraryStore(library: PhotoLibrary, { sizeBatchSize = 500 
       }
       const toMeasure = items.map((item) => item.id).filter((id) => !(id in knownSizes));
       set((state) => ({
+        ...withItems(state, items),
         permission,
-        items,
         sizes: knownSizes,
-        selectedIds: state.selectedIds.filter((id) => present.has(id)),
+        readFailed: false,
         sizing: toMeasure.length > 0 ? { done: 0, total: toMeasure.length } : null,
       }));
 
       // Sizes are facts about an item, so every finished batch is kept even if the library changes meanwhile.
-      for (let start = 0; start < toMeasure.length; start += sizeBatchSize) {
-        const batch = toMeasure.slice(start, start + sizeBatchSize);
+      const batchSize = Math.max(sizeBatchSize, Math.ceil(toMeasure.length / MAX_SIZE_BATCHES));
+      for (let start = 0; start < toMeasure.length; start += batchSize) {
+        const batch = toMeasure.slice(start, start + batchSize);
         let measured: SizeMap;
         try {
           measured = await library.getSizes(batch);
         } catch {
           measured = Object.fromEntries(batch.map((id) => [id, null]));
         }
-        const done = Math.min(start + sizeBatchSize, toMeasure.length);
+        const done = Math.min(start + batchSize, toMeasure.length);
         set((state) => ({
           sizes: { ...state.sizes, ...measured },
           sizing: done < toMeasure.length ? { done, total: toMeasure.length } : null,
@@ -84,7 +96,7 @@ export function createLibraryStore(library: PhotoLibrary, { sizeBatchSize = 500 
         followLibraryChanges();
         await load(permission);
       } else {
-        set({ permission, items: [], sizes: {}, sizing: null, selectedIds: [] });
+        set({ permission, items: [], sizes: {}, sizing: null, selectedIds: [], readFailed: false });
       }
     }
 
@@ -103,7 +115,7 @@ export function createLibraryStore(library: PhotoLibrary, { sizeBatchSize = 500 
           try {
             await apply(await library.getPermission());
           } catch {
-            set({ sizing: null, notice: 'Couldn’t read your photo library.' });
+            set({ sizing: null, readFailed: true });
           }
         } while (reloadRequested);
       })().finally(() => {
@@ -119,10 +131,12 @@ export function createLibraryStore(library: PhotoLibrary, { sizeBatchSize = 500 
       library.subscribe(({ deletedIds }) => {
         if (deletedIds.length > 0) {
           const deleted = new Set(deletedIds);
-          set((state) => ({
-            items: state.items.filter((item) => !deleted.has(item.id)),
-            selectedIds: state.selectedIds.filter((id) => !deleted.has(id)),
-          }));
+          set((state) =>
+            withItems(
+              state,
+              state.items.filter((item) => !deleted.has(item.id)),
+            ),
+          );
         }
         void reload();
       });
@@ -136,6 +150,7 @@ export function createLibraryStore(library: PhotoLibrary, { sizeBatchSize = 500 
       filter: 'all',
       sort: 'largest',
       selectedIds: [],
+      readFailed: false,
       notice: null,
 
       start: () => reload(),
@@ -155,15 +170,16 @@ export function createLibraryStore(library: PhotoLibrary, { sizeBatchSize = 500 
       clearSelection: () => set({ selectedIds: [] }),
       keepSelected: (ids) => set((state) => ({ selectedIds: state.selectedIds.filter((id) => ids.includes(id)) })),
       deleteSelected: async () => {
-        const present = new Set(get().items.map((item) => item.id));
-        const ids = get().selectedIds.filter((id) => present.has(id));
+        const ids = get().selectedIds;
         if (ids.length === 0) return 'cancelled';
         const outcome = await library.deleteItems(ids);
         if (outcome === 'deleted') {
           const deleted = new Set(ids);
           set((state) => ({
-            items: state.items.filter((item) => !deleted.has(item.id)),
-            selectedIds: [],
+            ...withItems(
+              state,
+              state.items.filter((item) => !deleted.has(item.id)),
+            ),
             notice: `Moved ${formatCount(ids.length, 'item', 'items')} to Recently Deleted.`,
           }));
         }

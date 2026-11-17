@@ -171,15 +171,31 @@ describe('library store', () => {
     expect([...measured].sort()).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
   });
 
-  it('says when the library can’t be read, instead of failing silently', async () => {
+  it('says when the library can’t be read, instead of failing silently, until it can be read again', async () => {
     const library = new FakePhotoLibrary([photo('p1', 1_000_000)]);
     library.failNextList = true;
     const { state } = setup(library);
 
     await state().start();
 
-    expect(state().notice).toBe('Couldn’t read your photo library.');
+    expect(state().readFailed).toBe(true);
+    expect(state().notice).toBeNull();
     expect(state().sizing).toBeNull();
+
+    await state().requestAccess();
+
+    expect(state().readFailed).toBe(false);
+    expect(state().items.map((i) => i.id)).toEqual(['p1']);
+  });
+
+  it('measures a large library in at most 20 batches, whatever the batch size', async () => {
+    const library = new FakePhotoLibrary(Array.from({ length: 100 }, (_, i) => photo(`p${i}`, 1_000)));
+    const { state } = setup(library, 2);
+
+    await state().start();
+
+    expect(library.sizeRequests.length).toBeLessThanOrEqual(20);
+    expect(Object.keys(state().sizes)).toHaveLength(100);
   });
 
   it('marks items whose size couldn’t be read as unknown and finishes measuring', async () => {

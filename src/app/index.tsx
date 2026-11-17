@@ -1,6 +1,5 @@
 import { FlashList } from '@shopify/flash-list';
 import { Stack, useRouter } from 'expo-router';
-import { useCallback, useMemo } from 'react';
 import { Linking, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { useShallow } from 'zustand/react/shallow';
 
@@ -11,8 +10,8 @@ import { MessageView } from '@/components/message-view';
 import { SELECTION_BAR_HEIGHT, SelectionBar } from '@/components/selection-bar';
 import { useLibrary } from '@/library/library-store-provider';
 import { describeItems } from '@/library/selection';
-import { visibleItems } from '@/library/sortFilter';
-import { useStableItems } from '@/library/use-stable-items';
+import { canRead } from '@/library/store';
+import { useGridItems } from '@/library/use-grid-items';
 import { colors, spacing } from '@/theme';
 
 const COLUMNS = 3;
@@ -32,33 +31,20 @@ export default function LibraryScreen() {
       filter: s.filter,
       sort: s.sort,
       selectedIds: s.selectedIds,
-      notice: s.notice,
     })),
   );
   const actions = useLibrary(
     useShallow((s) => ({
       requestAccess: s.requestAccess,
-      manageAccess: s.manageAccess,
-      setFilter: s.setFilter,
       setSort: s.setSort,
       toggleSelection: s.toggleSelection,
       clearSelection: s.clearSelection,
-      dismissNotice: s.dismissNotice,
     })),
   );
 
-  const sortedItems = useMemo(
-    () => visibleItems(state.items, state.sizes, { filter: state.filter, sort: state.sort }),
-    [state.items, state.sizes, state.filter, state.sort],
-  );
-  // While sizes are still arriving, keep tiles where they are so a tap never lands on a tile that just moved.
-  const items = useStableItems(
-    sortedItems,
-    state.sizing !== null && state.sort === 'largest',
-    `${state.filter}:${state.sort}`,
-  );
-  const selected = useMemo(() => new Set(state.selectedIds), [state.selectedIds]);
-  const openItem = useCallback((id: string) => router.push({ pathname: '/asset/[id]', params: { id } }), [router]);
+  const items = useGridItems(state.items, state.sizes, { filter: state.filter, sort: state.sort }, state.sizing !== null);
+  const selected = new Set(state.selectedIds);
+  const openItem = (id: string) => router.push({ pathname: '/asset/[id]', params: { id } });
 
   const header = (
     <>
@@ -67,7 +53,7 @@ export default function LibraryScreen() {
         <Stack.Toolbar.Menu
           icon="arrow.up.arrow.down"
           title="Sort By"
-          hidden={state.permission !== 'granted' && state.permission !== 'limited'}>
+          hidden={!canRead(state.permission)}>
           <Stack.Toolbar.MenuAction isOn={state.sort === 'largest'} onPress={() => actions.setSort('largest')}>
             Largest First
           </Stack.Toolbar.MenuAction>
@@ -125,13 +111,6 @@ export default function LibraryScreen() {
               items.map((item) => item.id),
               state.sizes,
             )}
-            filter={state.filter}
-            onFilterChange={actions.setFilter}
-            sizing={state.sizing}
-            limited={state.permission === 'limited'}
-            onManageAccess={() => void actions.manageAccess()}
-            notice={state.notice}
-            onDismissNotice={actions.dismissNotice}
           />
         }
         ListEmptyComponent={

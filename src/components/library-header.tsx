@@ -3,8 +3,10 @@ import { Picker, ProgressView, Text as SwiftText } from '@expo/ui/swift-ui';
 import { pickerStyle, tag } from '@expo/ui/swift-ui/modifiers';
 import { SymbolView } from 'expo-symbols';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useShallow } from 'zustand/react/shallow';
 
-import { formatCount } from '@/lib/format';
+import { formatCount, formatNumber } from '@/lib/format';
+import { useLibrary } from '@/library/library-store-provider';
 import type { LibraryFilter } from '@/library/types';
 import { colors, radius, spacing, tabularNumbers, type } from '@/theme';
 
@@ -14,25 +16,21 @@ const FILTERS: { value: LibraryFilter; label: string }[] = [
   { value: 'videos', label: 'Videos' },
 ];
 
-export function LibraryHeader({
-  summary,
-  filter,
-  onFilterChange,
-  sizing,
-  limited,
-  onManageAccess,
-  notice,
-  onDismissNotice,
-}: {
-  summary: string;
-  filter: LibraryFilter;
-  onFilterChange: (filter: LibraryFilter) => void;
-  sizing: { done: number; total: number } | null;
-  limited: boolean;
-  onManageAccess: () => void;
-  notice: string | null;
-  onDismissNotice: () => void;
-}) {
+/** `summary` describes the items the grid shows; everything else comes from the library store. */
+export function LibraryHeader({ summary }: { summary: string }) {
+  const { filter, setFilter, sizing, limited, manageAccess, readFailed, notice, dismissNotice } = useLibrary(
+    useShallow((s) => ({
+      filter: s.filter,
+      setFilter: s.setFilter,
+      sizing: s.sizing,
+      limited: s.permission === 'limited',
+      manageAccess: s.manageAccess,
+      readFailed: s.readFailed,
+      notice: s.notice,
+      dismissNotice: s.dismissNotice,
+    })),
+  );
+
   return (
     <View style={styles.container}>
       <Text style={styles.summary}>{summary}</Text>
@@ -40,11 +38,18 @@ export function LibraryHeader({
       {sizing ? (
         <View style={styles.sizing} accessibilityLabel={`Measuring sizes, ${sizing.done} of ${sizing.total}`}>
           <Text style={styles.sizingText}>
-            Measuring sizes… {formatCount(sizing.done, '', '').trim()} of {formatCount(sizing.total, 'item', 'items')}
+            Measuring sizes… {formatNumber(sizing.done)} of {formatCount(sizing.total, 'item', 'items')}
           </Text>
           <Host matchContents={{ vertical: true }} style={styles.progressHost}>
-            <ProgressView value={sizing.total === 0 ? 0 : sizing.done / sizing.total} />
+            <ProgressView value={sizing.done / sizing.total} />
           </Host>
+        </View>
+      ) : null}
+
+      {readFailed ? (
+        <View style={styles.banner} accessibilityRole="alert">
+          <SymbolView name="exclamationmark.triangle" size={17} tintColor={colors.secondaryLabel} />
+          <Text style={styles.bannerText}>Couldn’t read your photo library.</Text>
         </View>
       ) : null}
 
@@ -52,7 +57,7 @@ export function LibraryHeader({
         <View style={styles.banner} accessibilityRole="alert">
           <SymbolView name="trash" size={17} tintColor={colors.secondaryLabel} />
           <Text style={styles.bannerText}>{notice}</Text>
-          <Pressable accessibilityRole="button" accessibilityLabel="Dismiss" hitSlop={12} onPress={onDismissNotice}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Dismiss" hitSlop={12} onPress={dismissNotice}>
             <SymbolView name="xmark" size={13} weight="semibold" tintColor={colors.secondaryLabel} />
           </Pressable>
         </View>
@@ -66,7 +71,7 @@ export function LibraryHeader({
             accessibilityRole="button"
             accessibilityLabel="Manage"
             hitSlop={12}
-            onPress={onManageAccess}
+            onPress={() => void manageAccess()}
             style={({ pressed }) => pressed && { opacity: 0.4 }}>
             <Text style={styles.bannerAction}>Manage</Text>
           </Pressable>
@@ -77,7 +82,7 @@ export function LibraryHeader({
         <Picker
           testID="library-filter"
           selection={filter}
-          onSelectionChange={(value: LibraryFilter) => onFilterChange(value)}
+          onSelectionChange={(value: LibraryFilter) => setFilter(value)}
           modifiers={[pickerStyle('segmented')]}>
           {FILTERS.map(({ value, label }) => (
             <SwiftText key={value} modifiers={[tag(value)]}>

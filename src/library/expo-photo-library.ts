@@ -17,7 +17,6 @@ import { assetUri, toLocalIdentifier } from './asset-uri';
 import type { PermissionState, PhotoLibrary } from './photoLibrary';
 import type { LibraryItem } from './types';
 
-const PAGE_SIZE = 1000;
 
 function toPermission(response: PermissionResponse): PermissionState {
   if (response.status === 'granted') {
@@ -56,20 +55,10 @@ export function createExpoPhotoLibrary(): PhotoLibrary {
     requestPermission: async () => toPermission(await requestPermissionsAsync()),
     manageLimitedSelection: () => presentPermissionsPicker(),
 
+    // One query: expo-media-library re-runs the whole PhotoKit fetch for every offset page.
     listItems: async () => {
-      const items: LibraryItem[] = [];
-      for (let offset = 0; ; offset += PAGE_SIZE) {
-        const page = await new Query()
-          .orderBy({ key: AssetField.CREATION_TIME, ascending: false })
-          .limit(PAGE_SIZE)
-          .offset(offset)
-          .exeForMetadata();
-        for (const metadata of page) {
-          const item = toItem(metadata);
-          if (item) items.push(item);
-        }
-        if (page.length < PAGE_SIZE) return items;
-      }
+      const all = await new Query().orderBy({ key: AssetField.CREATION_TIME, ascending: false }).exeForMetadata();
+      return all.flatMap((metadata) => toItem(metadata) ?? []);
     },
 
     getSizes: (ids) => PhotoResources.getSizes(ids),
