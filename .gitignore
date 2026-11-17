@@ -46,4 +46,4 @@ example
 e2e/fixtures/
 
 # downloaded third-party reference screenshots (local only)
-research/**/img/
+research/

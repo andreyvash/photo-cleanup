@@ -46,7 +46,7 @@ Path: @/
 - **Shared helpers**:
   - `@/src/lib/format.ts` formats sizes, counts and durations, using decimal units like iOS Settings.
   - `@/src/theme.ts` is the design system: one system-blue accent, iOS semantic colors, pill and capsule shapes, and tabular numbers for sizes.
-  - The design patterns came from the Cleanup: Phone Storage Cleaner app on Appllama. The research notes are in `research/photo-cleanup/patterns.md`.
+  - The design patterns came from studying the Cleanup: Phone Storage Cleaner app on Appllama. The research notes stay local in `research/` (gitignored), because they contain Appllama's data.
 
 ### Core Implementation
 - The entry point is `expo-router/entry` (`main` in `package.json`), and the routes live in `@/src/app`. `tsconfig.json` maps the import alias `@/*` to `./src/*`, so code imports look like `@/library/store`. The paths in these docs (`@/src/...`) are relative to the repo root instead. The native module is imported by relative path because it's outside `src`.
@@ -66,7 +66,7 @@ Path: @/
 - Google setup:
   - `GOOGLE_IOS_CLIENT_ID` in `.env.local` (gitignored) reaches the app through `extra.googleIosClientId` and also produces the URL scheme for the Google Sign-In plugin, so changing it needs a rebuild.
   - Without it the app still runs, and Send says that sign-in isn't set up.
-- Generated and local-only paths are gitignored: `/ios` (native project), `e2e/fixtures/` (made by `scripts/make-fixtures.sh`) and `research/**/img/`.
+- Generated and local-only paths are gitignored: `/ios` (native project), `e2e/fixtures/` (made by `scripts/make-fixtures.sh`) and `research/`.
 - Testing has three layers:
   - unit and integration tests next to the code in `@/src`;
   - screen tests in `@/test/screens`, running against fakes;
