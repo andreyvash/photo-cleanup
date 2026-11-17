@@ -8,7 +8,10 @@ export type ExportProgressEvent = {
   progress: number;
 };
 
-/** The PhotoKit resource types that hold an asset's media, named as in `PHAssetResourceType`. */
+/**
+ * The PhotoKit resource types that hold an asset's media, named as in `PHAssetResourceType`. `other` is any type the
+ * module doesn't name (e.g. `audio`, or one added in a later iOS), exported so that nothing is lost on delete.
+ */
 export type ResourceType =
   | 'photo'
   | 'alternatePhoto'
@@ -16,7 +19,8 @@ export type ResourceType =
   | 'pairedVideo'
   | 'fullSizePairedVideo'
   | 'video'
-  | 'fullSizeVideo';
+  | 'fullSizeVideo'
+  | 'other';
 
 export type ExportedResource = {
   uri: string;

@@ -46,7 +46,7 @@ Path: @/src/drive
 - `DriveError` messages are the UI text, for example "Your Google Drive is full." Only `rejected` swaps in Google's own message when there is one.
 - The default `fetch` looks up `globalThis.fetch` when a request is made, not when the module loads. Tests can therefore pass Node's real fetch through the `fetch` option, which matters because jest-expo replaces the global fetch.
 - `listFolders` reads only the first page, so it returns at most 1000 folders.
-- Retries restart uploads at the queue level too. If a Live Photo's still lands and its video fails, retrying the item uploads the still again, which can leave a duplicate in Drive.
+- Retries restart uploads at the queue level too. If some of an item's files land (say an edited photo's original) and a later one fails, retrying the item uploads them all again, which leaves duplicates in Drive.
 - The transport's PUT also carries the `Authorization` header and the content type.
 - The `sleep` option lets tests skip the backoff delays.
 

@@ -12,7 +12,7 @@ function splitExtension(filename: string): [stem: string, extension: string] {
 /**
  * Names each exported resource for Drive after the item's original file: "IMG_1234.HEIC", its RAW "IMG_1234.DNG",
  * its Live Photo video "IMG_1234.MOV", and edited versions (which Photos calls "FullSizeRender") "IMG_1234-edited.jpg",
- * the suffix Google Takeout uses.
+ * the suffix English-language Google Takeout exports use.
  */
 export function toUploadFiles(resources: ExportedResource[]): ExportedFile[] {
   const original = resources.find((resource) => resource.type === 'photo' || resource.type === 'video') ?? resources[0];

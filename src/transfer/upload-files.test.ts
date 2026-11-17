@@ -24,11 +24,32 @@ describe('toUploadFiles', () => {
     ]);
   });
 
-  it('copies both halves of a RAW+JPEG pair under the same name', () => {
+  it('copies both halves of a RAW+JPEG pair under the same base name', () => {
     expect(names([resource('photo', 'IMG_1234.JPG'), resource('alternatePhoto', 'IMG_1234.DNG')])).toEqual([
       'IMG_1234.JPG',
       'IMG_1234.DNG',
     ]);
+  });
+
+  it('keeps the RAW of an edited RAW+JPEG pair alongside the edited version', () => {
+    expect(
+      names([
+        resource('photo', 'IMG_1234.JPG'),
+        resource('alternatePhoto', 'IMG_1234.DNG'),
+        resource('fullSizePhoto', 'FullSizeRender.jpg'),
+      ]),
+    ).toEqual(['IMG_1234.JPG', 'IMG_1234.DNG', 'IMG_1234-edited.jpg']);
+  });
+
+  it('names a file of a type it doesn’t recognize after the original, unmarked', () => {
+    expect(names([resource('photo', 'IMG_1234.HEIC'), resource('other', 'IMG_1234.m4a')])).toEqual([
+      'IMG_1234.HEIC',
+      'IMG_1234.m4a',
+    ]);
+  });
+
+  it('falls back to the first file’s name when Photos reports no original', () => {
+    expect(names([resource('fullSizePhoto', 'FullSizeRender.jpg')])).toEqual(['FullSizeRender-edited.jpg']);
   });
 
   it('names every file of an edited Live Photo after the still', () => {

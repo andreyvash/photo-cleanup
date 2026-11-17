@@ -95,8 +95,7 @@ public class PhotoResourcesModule: Module {
     return total
   }
 
-  /// The resource types that hold media, originals first. Edit recipes (`adjustmentData`), the bases they were applied
-  /// to and capture proxies are left out: they can't be opened outside Photos.
+  /// The media resource types, in upload order: stills, then a Live Photo's video, then video.
   static let uploadTypes: [(PHAssetResourceType, String)] = [
     (.photo, "photo"),
     (.alternatePhoto, "alternatePhoto"),
@@ -107,11 +106,28 @@ public class PhotoResourcesModule: Module {
     (.fullSizeVideo, "fullSizeVideo"),
   ]
 
+  /// Resources that aren't media of their own: the edit recipe, the intermediate renders an edit was applied on top of,
+  /// and the temporary proxy shown while the camera finishes processing a photo.
+  static let skippedTypes: Set<PHAssetResourceType> = {
+    var types: Set<PHAssetResourceType> = [
+      .adjustmentData, .adjustmentBasePhoto, .adjustmentBasePairedVideo, .adjustmentBaseVideo,
+    ]
+    if #available(iOS 17, *) {
+      types.insert(.photoProxy)
+    }
+    return types
+  }()
+
+  /// Every resource except `skippedTypes`: the known media types in `uploadTypes` order, then any other type as
+  /// "other". Copying a type this module doesn't know costs an extra file; skipping it could lose data on delete.
   static func uploadResources(for asset: PHAsset) -> [(PHAssetResource, String)] {
-    let resources = PHAssetResource.assetResources(for: asset)
-    return uploadTypes.flatMap { type, name in
+    let resources = PHAssetResource.assetResources(for: asset).filter { !skippedTypes.contains($0.type) }
+    let known = uploadTypes.flatMap { type, name in
       resources.filter { $0.type == type }.map { ($0, name) }
     }
+    let knownTypes = Set(uploadTypes.map(\.0))
+    let other = resources.filter { !knownTypes.contains($0.type) }.map { ($0, "other") }
+    return known + other
   }
 
   static func mimeType(for resource: PHAssetResource) -> String {

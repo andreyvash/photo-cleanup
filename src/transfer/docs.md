@@ -25,7 +25,7 @@ Path: @/src/transfer
 - When the Send modal unmounts, `SendSessionProvider` (`@/src/send/send-session.tsx`) reads this queue's store and passes the IDs with `sent` status to `keepSelected` on the library store (`@/src/library/store.ts`). A delete that follows can then only touch items that reached Drive. `sent` is therefore the one status that must never be set for an item whose files didn't all land.
 
 ### Core Implementation
-- `toUploadFiles` (`upload-files.ts`) turns the native module's exported resources into the queue's `ExportedFile`s. Every file takes the base name of the item's original resource (the first `photo` or `video` resource, else the first resource) plus its own extension, so `FullSizeRender.jpg` becomes `IMG_1234-edited.jpg`. Edited versions (`fullSizePhoto`, `fullSizePairedVideo`, `fullSizeVideo`) get a `-edited` suffix, the one Google Takeout uses. Originals, a RAW (`alternatePhoto`) and a Live Photo's video keep the plain base name and differ by extension. Only the last dot counts as the extension. `uri`, `mimeType` and `size` pass through unchanged.
+- `toUploadFiles` (`upload-files.ts`) turns the native module's exported resources into the queue's `ExportedFile`s. Every file takes the base name of the item's original resource (the first `photo` or `video` resource, else the first resource) plus its own extension, so `FullSizeRender.jpg` becomes `IMG_1234-edited.jpg`. Edited versions (`fullSizePhoto`, `fullSizePairedVideo`, `fullSizeVideo`) get a `-edited` suffix, the one English-language Google Takeout exports use. Any `other` type keeps the plain base name. Originals, a RAW (`alternatePhoto`) and a Live Photo's video keep the plain base name and differ by extension. Only the last dot counts as the extension. `uri`, `mimeType` and `size` pass through unchanged.
 - State lives in a zustand vanilla store:
   - `phase`: `idle` → `running` → (`stopping`) → `finished`.
   - `folder`: the target Drive folder.
@@ -59,7 +59,7 @@ waiting → notSent(message)        (the queue halted before reaching this item)
 - The `downloading` status's progress stays at 0 for items already on the device, because PhotoKit only reports progress while downloading from iCloud. The progress screen shows "Preparing…" until progress is above 0.
 - A failed export never reaches the discard step. The exporter cleans up after a failed export itself, and both the native module and the disk-backed fake do.
 - `TransferItem.size` is the size the library measured. It can be null and is used only for display. Upload progress uses the actual sizes of the exported files.
-- An item can be up to four files (an edited Live Photo: original and edited still, original and edited video). If some land and a later one fails, the item is `failed`, and a retry uploads all of them again, which duplicates the ones that had landed in Drive.
+- An item can be several files, usually at most four (an edited Live Photo: original and edited still, original and edited video). If some land and a later one fails, the item is `failed`, and a retry uploads all of them again, which duplicates the ones that had landed in Drive.
 - The queue lives only in memory. If the app is killed during a transfer, nothing is saved or resumed.
 
 Created and maintained by Nori.

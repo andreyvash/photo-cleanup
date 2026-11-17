@@ -61,7 +61,8 @@ Google sign-in and real uploads can't be automated, because they need your accou
 ## Known limitations
 
 - **Edits arrive as a second file, not as an edit.** Drive gets the original and the edited version side by side. Photos' record of the edit isn't copied, so the edit can't be adjusted or reverted from the Drive copies.
-- **Sizes and bytes sent can differ slightly.** The size shown is everything Photos stores for an item, which is what deleting frees. That includes the edit record, which isn't sent.
+- **The bytes sent can be fewer than the size shown.** The size shown is everything Photos stores for an item, which is what deleting frees. That includes the edit record and, for some edited items, an intermediate render, and neither is sent.
+- Portrait depth and Live Photo effects (Loop, Bounce) are probably stored as edits too, so those items would arrive with an `-edited` file even if you never edited them. This hasn't been checked on a device yet.
 - **Stop can't interrupt an iCloud download in progress.** That item is finished first, then discarded. You can close the screen meanwhile.
 - A size comes from PhotoKit's undocumented `fileSize` resource key. If Apple removes it, sizes show as "Size unavailable" rather than crashing.
 - Retrying a failed upload starts that file over. Partial uploads aren't resumed.
