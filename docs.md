@@ -32,19 +32,22 @@ Path: @/
 ```
 
 - **Services boundary** (`@/src/services.tsx`): every external system sits behind a small interface: `PhotoLibrary`, `GoogleAuth`, `DriveClient` and `Exporter`.
-  - `useService(key)` returns whatever `ServicesProvider` was given. Otherwise it creates the production implementation with `require` on first use and caches it for the rest of the launch, so native modules load only where they're needed.
+  - `useService(key)` returns whatever `ServicesProvider` was given. Otherwise it creates the production implementation on first use, through that service's factory in the `factories` map (each one `require`s its module), and caches it for the rest of the launch, so native modules load only where they're needed.
   - The production `DriveClient` gets its access tokens from the production `GoogleAuth`.
+  - The root layout (`@/src/app/_layout.tsx`) requests the `exporter` at launch, to clear temp exports a killed session left behind. The library store's provider requests `photoLibrary` at launch too. `googleAuth` and `drive` are first requested when the Send modal opens.
   - Tests pass fakes for exactly these boundaries (`@/test`).
 - **Two stores with different lifetimes**, both zustand vanilla stores:
   - The library store (`@/src/library`) is provided at the root layout and lasts as long as the app.
   - The send session and transfer queue (`@/src/send`, `@/src/transfer`) are provided by the Send modal's layout and last only while the modal is open.
 
   The library store's selection is how the two hand off: Send reads it, and when the Send modal closes, however it closes (Done, swipe-down or Cancel), `SendSessionProvider`'s unmount cleanup narrows the selection to the items that reached Drive. That's what makes a delete after a partial send safe.
-- **IDs** are bare PhotoKit local identifiers everywhere. Only `@/src/library/expo-photo-library.ts` deals with expo-media-library's `ph://` IDs, and UI code builds `ph://<id>` itself for expo-image and expo-video.
+- **IDs** are bare PhotoKit local identifiers everywhere. The `ph://` scheme lives only in `@/src/library/asset-uri.ts`: `assetUri(id)` builds `ph://<id>` for expo-image, expo-video and expo-media-library's `Asset`, and `toLocalIdentifier` strips the prefix from expo-media-library's IDs.
 - **Native module** `@/modules/photo-resources` exists because expo-media-library has no file-size API. It also exports originals for upload, downloading them from iCloud when needed.
 - **Drive** (`@/src/drive`) uses only the `drive.file` scope, so the app sees only the folders it created. It uploads with the resumable protocol through an injectable upload transport.
 - **Shared helpers**:
-  - `@/src/lib/format.ts` formats sizes, counts and durations, using decimal units like iOS Settings.
+  - `@/src/lib/format.ts` formats sizes, numbers, counts and durations, using decimal units like iOS Settings.
+  - `@/src/lib/errors.ts` has `messageOf(error, fallback)`, which turns anything thrown into text for the user: the error's own message when it has a non-empty one, otherwise the fallback ("Something went wrong." by default). The transfer queue, the delete sheet, Google sign-in and the New Folder sheet all use it.
+  - `@/src/library/selection.ts` adds up sizes (`totalSize`) and formats them (`formatTotal`, `describeItems`) the same way wherever a set of items is described, including the transfer progress header.
   - `@/src/theme.ts` is the design system: one system-blue accent, iOS semantic colors, pill and capsule shapes, and tabular numbers for sizes.
   - The design patterns came from studying the Cleanup: Phone Storage Cleaner app on Appllama. The research notes stay local in `research/` (gitignored), because they contain Appllama's data.
 
@@ -54,7 +57,7 @@ Path: @/
   - iOS only, portrait, no tablet support, bundle ID `dev.photocleanup.app`;
   - the `typedRoutes` and `reactCompiler` experiments are on;
   - plugins: expo-router, splash screen, expo-media-library (with the photo-permission text) and expo-video, plus Google Sign-In only when `GOOGLE_IOS_CLIENT_ID` is set.
-- **Browse.** When the app starts, the library store checks photo access without showing iOS's prompt, which appears only when the user taps Allow Access. Once access is granted, the store lists metadata through the adapter and measures sizes through `PhotoResources.getSizes` in batches with visible progress. Library change events prune deleted items at once and trigger a reload; reloads run one at a time, and a burst of events collapses into one follow-up reload. The Library screen derives the filtered, sorted list with `visibleItems`, and while sizes are still being measured in "Largest first" it keeps tiles where they are (`useStableItems`) instead of reshuffling the grid.
+- **Browse.** When the app starts, the library store checks photo access without showing iOS's prompt, which appears only when the user taps Allow Access. Once access is granted, the store lists metadata through the adapter in one query and measures sizes through `PhotoResources.getSizes` in batches (at most 20 per load) with visible progress. Library change events prune deleted items at once and trigger a reload; reloads run one at a time, and a burst of events collapses into one follow-up reload. The Library screen gets its grid from `useGridItems`, which filters and sorts with `visibleItems` and, while sizes are still being measured in "Largest first", keeps tiles where they are instead of reshuffling the grid.
 - **Send.**
   1. The Send screen builds transfer items from the selection.
   2. The queue exports each item to a temp directory (native module), uploads each file (Drive client, through the background upload task), and always discards the temp directory afterwards. An item is marked `sent` only when its export produced files and every one of them uploaded, because `sent` is what lets an item stay selected for deletion.
@@ -74,7 +77,7 @@ Path: @/
 
   Google sign-in and real uploads are checked by hand.
 - Sizes come from PhotoKit's undocumented `fileSize` key. If Apple removes it, sizes show as "Size unavailable" and nothing crashes.
-- Temp exports left behind by a killed session are removed at app launch: `createExpoPhotoLibrary()` (`@/src/library`) calls `PhotoResources.clearExports()`. The root layout creates it, before any transfer can be running.
+- Temp exports left behind by a killed session are removed at app launch: the root layout (`@/src/app/_layout.tsx`) calls `exporter.clearLeftovers()` once when it mounts, before any transfer can be running. The production exporter implements it with `PhotoResources.clearExports()`.
 - Known limitations:
   - Retrying an item whose first files already landed (an edited photo's original, a Live Photo's still) duplicates those files in Drive.
   - Photos' edit record isn't copied: Drive gets the original and the edited version as separate files.

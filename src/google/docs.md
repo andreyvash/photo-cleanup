@@ -7,8 +7,8 @@ Path: @/src/google
 - It defines the app's only OAuth scope, `DRIVE_SCOPE` (`drive.file`). With that scope the app can see only files and folders it created.
 
 ### How it fits into the larger codebase
-- `GoogleAuth` is a service boundary in `@/src/services.tsx`. The production instance also supplies the Drive client's tokens: `createDriveClient` receives `getAccessToken: () => googleAuth.getAccessToken()`, so every request in `@/src/drive` gets its token here.
-- The only UI-side caller is `@/src/send/send-session.tsx`. It calls `restore()` when the Send modal opens, calls `signIn()` and `signOut()` from the Send screen, and stores the resulting `GoogleAccount`.
+- `GoogleAuth` is a service boundary in `@/src/services.tsx`. The production instance also supplies the Drive client's tokens: the production `createDriveClient` receives `getAccessToken: () => productionService('googleAuth').getAccessToken()`, so every request in `@/src/drive` gets its token here.
+- The only UI-side caller is `@/src/send/send-session.tsx`. It calls `restore()` when the Send modal opens, calls `signIn()` and `signOut()` from the Send screen, and keeps the resulting `GoogleAccount` in its `auth` state (`{ status: 'signedIn', account }`).
 - The iOS client ID comes from `GOOGLE_IOS_CLIENT_ID` in `.env.local`:
   - `@/app.config.ts` exposes it as `extra.googleIosClientId`, which this module reads through `expo-constants`.
   - `app.config.ts` adds the Google Sign-In config plugin, with a URL scheme derived from the client ID, only when the variable is set.
@@ -30,7 +30,7 @@ Path: @/src/google
 - `GoogleAccount` keeps only `{ email, name }`.
 
 ### Things to Know
-- The Send screen shows error messages from here (`GoogleAuthError` text and SDK errors) word for word. The "isn't set up" message appears only after the user taps Sign in with Google.
+- The Send screen shows error messages from here (`GoogleAuthError` text and SDK errors) word for word, through `messageOf` (`@/src/lib/errors.ts`), which falls back to "Couldn’t sign in to Google." only for an error without a message. The "isn't set up" message appears only after the user taps Sign in with Google.
 - What a `getAccessToken` failure becomes in `@/src/drive`:
   - A `GoogleAuthError` with `needsSignIn === true` (any token failure except an offline one, or no client ID) becomes `DriveError('auth')`, with no retry.
   - The offline (`NSURLErrorDomain`) error is retried like a network failure and ends as `DriveError('unavailable')`, so an offline user isn't told to sign in again.

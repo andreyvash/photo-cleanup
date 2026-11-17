@@ -8,7 +8,13 @@ Path: @/src/transfer
 - Transfers only ever copy. Nothing in this folder deletes from the photo library.
 
 ### How it fits into the larger codebase
-- `queue.ts` defines the `Exporter` interface and the `ExportedFile` type. `@/src/services.tsx` registers `exporter` as a service boundary with these types, and both exporter fakes in `@/test/support` implement them.
+- `queue.ts` defines the `Exporter` interface (`exportForUpload`, `discard`, `clearLeftovers`) and the `ExportedFile` type. `@/src/services.tsx` registers `exporter` as a service boundary with these types, and both exporter fakes in `@/test/support/fakeExporter.ts` implement them.
+- `queue.ts` also exports the status rules other code shares instead of re-deriving them:
+  - `isBusy(state)`: `phase` is `running` or `stopping`.
+  - `isRetryable(status)`: `failed` or `notSent`.
+  - `sentItems(state)`: the items whose status is `sent`, the only ones a later delete may remove.
+
+  The queue itself, the progress screen (`@/src/app/send/progress.tsx`) and `SendSessionProvider`'s unmount cleanup use them.
 - The queue depends only on `Pick<DriveClient, 'uploadFile'>` from `@/src/drive` and on an `Exporter`. It has no React or navigation code, so `queue.test.ts` runs it in the Node environment against the real Drive client and the local fake Drive server.
 - `SendSessionProvider` in `@/src/send/send-session.tsx` creates one queue per Send modal. Screens in `@/src/app/send` read the queue's zustand `store` and call `start`, `stop` and `retryFailed`.
 - `photo-exporter.ts` wraps `@/modules/photo-resources`:
@@ -16,13 +22,13 @@ Path: @/src/transfer
   - It names the exported resources for Drive with `toUploadFiles` (`upload-files.ts`).
   - It rethrows any export failure through `toExportError`.
   - Its `discard` deletes the temp directory with expo-file-system's `Directory`.
-  - It doesn't clear leftover exports. `createExpoPhotoLibrary()` in `@/src/library` does that once at app launch.
-- `toExportError` (`export-errors.ts`) handles Expo's wrapping of native exceptions ("Calling the 'exportForUpload' function has failed → Caused by: …"), which keeps the native `code`. The resulting `Error` carries the `code` and the first message that applies:
+  - Its `clearLeftovers` calls `PhotoResources.clearExports()`, which deletes the whole temp root. The queue never calls it. The root layout (`@/src/app/_layout.tsx`) calls it once at app launch, when no transfer can be running, to remove the exports of a session that was killed.
+- `toExportError` (`export-errors.ts`) handles Expo's wrapping of native exceptions ("Calling the 'exportForUpload' function has failed → Caused by: …"), which keeps the native `code`. It reads the `code` and returns a plain `Error` with the first message that applies:
   1. app copy for known codes (`ICLOUD_DOWNLOAD_FAILED`, `NOT_ENOUGH_SPACE`, `ASSET_NOT_FOUND`);
   2. the text after "→ Caused by:", that is, the native description without Expo's wrapper;
   3. the raw message;
   4. "Couldn’t copy this item."
-- When the Send modal unmounts, `SendSessionProvider` (`@/src/send/send-session.tsx`) reads this queue's store and passes the IDs with `sent` status to `keepSelected` on the library store (`@/src/library/store.ts`). A delete that follows can then only touch items that reached Drive. `sent` is therefore the one status that must never be set for an item whose files didn't all land.
+- When the Send modal unmounts, `SendSessionProvider` (`@/src/send/send-session.tsx`) reads this queue's store and passes the IDs of `sentItems(...)` to `keepSelected` on the library store (`@/src/library/store.ts`). A delete that follows can then only touch items that reached Drive. `sent` is therefore the one status that must never be set for an item whose files didn't all land.
 
 ### Core Implementation
 - `toUploadFiles` (`upload-files.ts`) turns the native module's exported resources into the queue's `ExportedFile`s. Every file takes the base name of the item's original resource (the first `photo` or `video` resource, else the first resource) plus its own extension, so `FullSizeRender.jpg` becomes `IMG_1234-edited.jpg`. Edited versions (`fullSizePhoto`, `fullSizePairedVideo`, `fullSizeVideo`) get a `-edited` suffix, the one English-language Google Takeout exports use. Any `other` type keeps the plain base name. Originals, a RAW (`alternatePhoto`) and a Live Photo's video keep the plain base name and differ by extension. Only the last dot counts as the extension. `uri`, `mimeType` and `size` pass through unchanged.
@@ -46,11 +52,12 @@ waiting → notSent(message)        (the queue halted before reaching this item)
   2. Upload each exported file in turn. Status is `uploading`, with progress measured in bytes across all of the item's files.
   3. Mark the item `sent` once its last file lands.
 
-  An export that returns no files fails the item with "Nothing to copy for this item." instead of reaching `sent`.
+  An export that returns no files fails the item with "Nothing to copy for this item." instead of reaching `sent`. A failed item's message is `messageOf(error)` (`@/src/lib/errors.ts`): the error's own message, or "Something went wrong." when it has none.
+- Every status change goes through `setStatus`. Progress is shown in whole percent, so `setStatus` drops an update whose state is the same as the current one (`downloading` or `uploading`) and whose `Math.round(progress * 100)` is unchanged. Fast iCloud or upload progress therefore publishes a store update (and re-renders the progress screen) at most once per percent, not on every callback. A change of state, or to a new whole percent, is always published.
 - Halting: if an upload fails with a `DriveError` whose kind is in `HALTING_ERRORS` (`quota`, `auth`, `folderMissing`, `unavailable`), that item becomes `failed` and every remaining item becomes `notSent` with the same message, without being exported. These are errors that would fail every remaining item too. Any other upload error (such as `rejected`), and any export error, fails only that item and the queue moves on.
 - `stop()` only acts while `running`. It sets `phase: 'stopping'` and aborts the queue's `AbortController`. The upload in progress rejects, its item becomes `notSent` with "Stopped", and so does every item after it.
-- `start()` and `retryFailed()` do nothing while a run is in progress (`phase` is `running` or `stopping`). That guards against double taps starting a second run over the same store.
-- `retryFailed()` re-runs only the items that are `failed` or `notSent`, in their original order and to the same folder. `run` merges into the existing status map, so items already `sent` keep that status.
+- `start()` and `retryFailed()` do nothing while `isBusy` (`phase` is `running` or `stopping`). That guards against double taps starting a second run over the same store.
+- `retryFailed()` re-runs only the items that are `isRetryable` (`failed` or `notSent`), in their original order and to the same folder. `run` merges into the existing status map, so items already `sent` keep that status.
 - After every upload attempt, successful or not, a `finally` discards the export's temp directory and ignores any error from discarding.
 
 ### Things to Know

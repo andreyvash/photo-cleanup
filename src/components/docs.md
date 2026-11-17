@@ -3,8 +3,8 @@
 Path: @/src/components
 
 ### Overview
-- Shared presentational pieces for the screens in `@/src/app`: the grid tile, the Library list header, the floating selection bar, pill buttons, iOS-style grouped lists, and a centered message view for empty, permission and error states.
-- Components get their data and callbacks through props and never read stores or services. The routes do all of the state wiring.
+- Shared presentational pieces for the screens in `@/src/app`: the grid tile, the small list thumbnail, the Library list header, the floating selection bar, pill buttons, iOS-style grouped lists, and a centered message view for empty, permission and error states.
+- Components get their data and callbacks through props and never use services. The one exception to props-only is `LibraryHeader`, which reads the library store itself; the routes do the rest of the state wiring.
 
 ### How it fits into the larger codebase
 - All styling comes from `@/src/theme.ts`:
@@ -12,7 +12,8 @@ Path: @/src/components
   - the shape rule: actions are pills, floating bars are capsules, cards use radius 16, list thumbnails use 8, grid tiles are square;
   - `tabularNumbers` for any text showing sizes or counts.
 - Size and duration text comes from `@/src/lib/format.ts`. A tile's `size` prop follows the library's three-state size convention from `@/src/library/types.ts`.
-- Images load through expo-image's photo-library loader with `ph://<localIdentifier>` URIs.
+- Images load through expo-image's photo-library loader, with `ph://<localIdentifier>` URIs built by `assetUri` (`@/src/library/asset-uri.ts`).
+- `LibraryHeader` uses `useLibrary` from `@/src/library/library-store-provider.tsx`, so it only works inside `LibraryStoreProvider` (which the root layout provides for every route).
 - Native pieces:
   - The segmented filter `Picker` and the `ProgressView` in the Library header are SwiftUI views from `@expo/ui`, placed inside a `Host`.
   - SF Symbols come from `expo-symbols`.
@@ -27,12 +28,14 @@ Path: @/src/components
   - a separate 44pt select target at the bottom right.
 
   Tapping the tile opens the preview, and tapping the circle toggles selection. For VoiceOver, its label reads like "Video, 25.8 MB, 0:10", and custom `activate` and `select` actions provide both behaviors.
-- `LibraryHeader` stacks, from top to bottom:
-  - the summary of the visible items;
-  - a progress row while sizes are being measured;
-  - the notice banner after a delete;
+- `LibraryHeader` takes only `summary`, which the Library screen computes from the items the grid shows. It selects everything else from the library store with `useShallow`: `filter`/`setFilter`, `sizing`, whether `permission` is `limited`, `manageAccess`, `readFailed`, `notice`/`dismissNotice`. It stacks, from top to bottom:
+  - the summary;
+  - a progress row while sizes are being measured ("Measuring sizes… N of M items");
+  - the "Couldn’t read your photo library." banner while `readFailed` is true, with no dismiss button (the next successful read clears it);
+  - the notice banner after a delete, with a dismiss button;
   - the limited-access banner with a Manage button;
   - the SwiftUI segmented filter (All, Photos, Videos).
+- `Thumbnail` is the small square preview used by the delete sheet, the Send screen and the transfer progress rows. `THUMBNAIL_SIZE` is exported so layouts can line up with it (the progress list's separator inset), and `thumbnailFrame` is its frame style, for a placeholder tile that sits in a row of thumbnails (the delete sheet's "+N").
 - `SelectionBar` floats above the bottom safe area. It shows the selection summary, a Clear button, Delete (destructive tinted) and Send to Drive. It exports `SELECTION_BAR_HEIGHT` so the list can add matching bottom padding.
 - `Button` is a pill with variants (such as `primary`, `destructive`, `tinted` and `plain`) and an optional SF Symbol. When disabled it's drawn at reduced opacity.
 - `GroupedSection` and `GroupedRow` draw inset grouped sections like iOS Settings. The section puts separators between rows, and a row shows a checkmark when `selected`.
@@ -44,5 +47,6 @@ Path: @/src/components
 - The select circle is a `Pressable` nested inside the tile's `Pressable`, so tapping it toggles selection without opening the preview.
 - Text and badges drawn over photos use `colors.onMedia` and `colors.mediaScrim`, so they look the same in light and dark mode.
 - `GroupedSection` drops falsy children, so screens can render rows conditionally inline.
+- The header's measuring `ProgressView` divides `sizing.done` by `sizing.total` without a zero check: the store only sets `sizing` when there's at least one item to measure.
 
 Created and maintained by Nori.

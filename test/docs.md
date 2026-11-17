@@ -10,11 +10,11 @@ Path: @/test
 - The setup is Jest 30 with the `jest-expo` preset and React Native Testing Library 14, configured in `@/package.json`. That config adds React Native, Expo, Google Sign-In and FlashList to the transform list and loads FlashList's Jest setup file.
 - `npm test` runs Jest with `LC_ALL=en_US.UTF-8`. `@/src/lib/format.ts` formats numbers with `Intl.NumberFormat` in the default locale, so this keeps assertions on formatted sizes and counts from depending on the host's region. Running `jest` directly doesn't set it.
 - Tests live in two places:
-  - Next to the code in `@/src`, as `*.test.ts`: the pure logic, the library store, the Drive client and the transfer queue.
+  - Next to the code in `@/src`, as `*.test.ts`: the pure logic, hooks (with `renderHook`), the library store, the Drive client and the transfer queue.
   - Here, in `test/screens`: tests at the route level.
-- Screen tests render the actual `@/src/app` route tree with expo-router's `renderRouter('./src/app', { wrapper, initialUrl: '/' })`. The `wrapper` is a `ServicesProvider` that passes in fakes from `test/support`.
-- Any service a test doesn't pass in falls back to the real production implementation, which is loaded on first use. A test must therefore pass in every service the screens it visits will use, which is why the Send tests pass in every boundary.
-- The Drive client and transfer queue tests (`@/src/drive/client.test.ts`, `@/src/transfer/queue.test.ts`) declare `@jest-environment node` and run the real `createDriveClient` over HTTP against `FakeDrive`.
+- Screen tests render the actual `@/src/app` route tree through `renderApp(services)` (`test/support/renderApp.tsx`). It calls expo-router's `renderRouter('./src/app', { wrapper, initialUrl: '/' })`, where the `wrapper` is a `ServicesProvider` with the given fakes plus an `InstantExporter` unless the test passes its own exporter. The same file has `selectTiles(positions)`, which ticks the select checkbox of the library tiles at those grid positions, and `pressSelectionBarButton(name)`.
+- Any service a test doesn't pass in falls back to the real production implementation, which is loaded on first use. A test must therefore pass in every service the screens it visits will use, which is why the Send tests pass in every boundary. The root layout requests `exporter` at launch (to call `clearLeftovers`), so every screen test needs one, which is why `renderApp` supplies the default.
+- The Drive client and transfer queue tests (`@/src/drive/client.test.ts`, `@/src/transfer/queue.test.ts`) declare `@jest-environment node` and run the real `createDriveClient` over HTTP against `FakeDrive`. Both build it with `driveClientFor(drive, getAccessToken?)` (`test/support/driveClient.ts`), which wires in `nodeTransport`, `nodeFetch`, the fake's `baseUrl` and a no-op `sleep`, and by default answers with the fake's `validToken`.
 - End-to-end tests run outside Jest as Maestro flows in `e2e/`, on a simulator prepared by `scripts/seed-simulator.sh <udid>`. That script:
   1. erases the simulator;
   2. sets the simulator's locale to en_US, so number formatting matches the assertions;
@@ -38,10 +38,10 @@ Path: @/test
   - `answerUploadWith(name, body)` to store the next upload of `name` as usual but answer the byte PUT with a non-JSON body;
   - `filesIn(folderId)` and `requests(endpoint)` to check what landed in Drive.
 - `nodeTransport` and `nodeFetch` stand in for the native upload task. `nodeFetch` is Node's own fetch, taken from the host realm with `vm.runInThisContext('fetch')`, because jest-expo replaces `globalThis.fetch` with expo/fetch, which only works on a device.
-- There are two different exporter fakes:
-  - `FakeExporter` (`fakeExporter.ts`) writes real temp files that the real Drive client can upload, for the queue tests. Like the native module, it deletes its directory when an export fails, and `leftovers()` lets tests check that cleanup happened. `failExport` makes an export fail with a native-style coded error.
-  - `InstantExporter` (`fakeGoogle.ts`) is the screen-test exporter. It returns one in-memory file per item immediately, reporting progress 1, and its `discard` does nothing.
-- `fakeGoogle.ts` also has `FakeGoogleAuth`, where `nextSignIn` makes the next sign-in succeed, cancel or throw an Error, and `FakeDriveClient`, an in-memory `DriveClient` whose uploads fail per filename via `failures`. The HTTP protocol itself is tested in the Drive client tests, not here.
+- There are two different exporter fakes, both in `fakeExporter.ts`:
+  - `FakeExporter` writes real temp files that the real Drive client can upload, for the queue tests. Like the native module, it deletes its directory when an export fails, and `leftovers()` lets tests check that cleanup happened. `failExport` makes an export fail with a native-style coded error. Its `clearLeftovers` deletes everything under its temp root.
+  - `InstantExporter` is the screen-test exporter. It returns one in-memory file per item immediately, reporting progress 1, and its `discard` does nothing. Its `clearLeftovers` only sets `leftoversCleared`, which the Library screen test checks to confirm the app clears leftovers at launch.
+- `fakeGoogle.ts` has `FakeGoogleAuth`, where `nextSignIn` makes the next sign-in succeed, cancel or throw an Error, and `FakeDriveClient`, an in-memory `DriveClient` whose uploads fail per filename via `failures`. The HTTP protocol itself is tested in the Drive client tests, not here.
 
 ### Things to Know
 - In React Native Testing Library 14, `render` and `fireEvent` are async and have to be awaited.
@@ -49,7 +49,7 @@ Path: @/test
 - The SwiftUI segmented filter is driven with `fireEvent(el, 'selectionChange', { nativeEvent: { selection } })`.
 - A swipe-down dismissal of the Send modal is simulated with `act(() => router.back())`, since Jest can't perform the native gesture.
 - Screen tests check text the user sees, such as "4 items · 37 MB + 1 unknown", and accessibility labels such as "Video, 25.8 MB, 0:10". Changing wording in `@/src/library/selection.ts`, `@/src/lib/format.ts` or `@/src/components` fails these tests.
-- `createLibraryStore` takes a `sizeBatchSize` option, so store tests can watch sizes being measured in several batches with only a few items.
+- `createLibraryStore` takes a `sizeBatchSize` option, so store tests can watch sizes being measured in several batches with only a few items. The store still caps a load at `MAX_SIZE_BATCHES` batches by growing the batch size, so a test with many items and a tiny `sizeBatchSize` sees fewer, larger batches.
 - Maestro flows match exact size text from the fixtures that `make-fixtures.sh` generates. iOS also puts its own sample photos on every simulator, so the flows check the largest and smallest items and totals for videos only, never totals for the whole library.
 
 Created and maintained by Nori.

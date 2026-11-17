@@ -7,12 +7,12 @@ Path: @/src/drive
 - Every failure surfaces as a `DriveError` with a `kind` and a message written for the user. Screens and the transfer queue display these errors without translating them.
 
 ### How it fits into the larger codebase
-- `DriveClient` is one of the boundaries in `@/src/services.tsx`. The production instance is built there lazily, as `createDriveClient({ getAccessToken: () => googleAuth.getAccessToken(), transport: expoUploadTransport })`. Every Drive request therefore gets its token from `@/src/google/auth.ts`.
+- `DriveClient` is one of the boundaries in `@/src/services.tsx`. The production instance is built there lazily by the `drive` factory, as `createDriveClient({ getAccessToken: () => productionService('googleAuth').getAccessToken(), transport: expoUploadTransport })`. Every Drive request therefore gets its token from the production `GoogleAuth` in `@/src/google/auth.ts`.
 - Who calls in:
   - `@/src/transfer/queue.ts` calls `uploadFile`, and halts the queue on `quota`, `auth`, `folderMissing` and `unavailable`.
-  - The Send screens in `@/src/app/send` call `listFolders` through a TanStack Query and `createFolder` through a mutation.
+  - The Send screens in `@/src/app/send` call `listFolders` through a TanStack Query (keyed by `DRIVE_FOLDERS_KEY` from `@/src/send/send-session.tsx`) and `createFolder` through a mutation.
 - The OAuth scope is `drive.file` only (`DRIVE_SCOPE` in `@/src/google/auth.ts`), so Drive shows the app only the folders it created. The folder query relies on this and doesn't filter by parent. The scope was chosen for personal use and to avoid restricted-scope verification.
-- Every external dependency can be injected: `fetch`, `transport`, `baseUrl` and `sleep`. That's how `client.test.ts` and `@/src/transfer/queue.test.ts` run the real client over HTTP against the local fake in `@/test/support/fakeDrive.ts`.
+- Every external dependency can be injected: `fetch`, `transport`, `baseUrl` and `sleep`. That's how `client.test.ts` and `@/src/transfer/queue.test.ts` run the real client over HTTP against the local fake in `@/test/support/fakeDrive.ts`, both through `driveClientFor(drive, getAccessToken?)` in `@/test/support/driveClient.ts`.
 
 ### Core Implementation
 - `withRetries(attempt, signal)` wraps every request:
@@ -38,8 +38,9 @@ Path: @/src/drive
   2. Read the session URL from the `Location` header.
   3. Hand the whole file to the `UploadTransport` as a single PUT. A 200 or 201 counts as success whatever the body contains. The new file's `id` is read from the body when it's there, and is `''` otherwise. Drive already has the file at that point, so a body that can't be read must never lead to another upload and a duplicate.
 - Because step 1 is inside the retried attempt, every retry opens a new session and sends the file from the first byte. A partial upload is never resumed.
-- `UploadTransport` is the seam for sending the bytes. The production `expoUploadTransport` (in `transport.ts`) uses expo-file-system's `File.createUploadTask` with `sessionType: 'background'`. iOS can then keep streaming from disk while the app is suspended, as long as the JS runtime that started the upload is still alive.
-- `listFolders` queries `mimeType = folder and trashed = false`, requests `id,name,createdTime`, reads one page (`pageSize` 1000), and sorts by name with `localeCompare`. `createFolder` POSTs folder metadata and returns the same `DriveFolder` shape.
+- `UploadTransport` is the seam for sending the bytes. It receives the session URL, the file URI, the headers, an `onProgress(bytesSent)` callback and an optional signal, and resolves to `{ status, body }`; the client reads nothing else from the response. The production `expoUploadTransport` (in `transport.ts`) uses expo-file-system's `File.createUploadTask` with `sessionType: 'background'` and forwards the task's `bytesSent`. iOS can then keep streaming from disk while the app is suspended, as long as the JS runtime that started the upload is still alive.
+- `uploadFile`'s own `onProgress` likewise reports only bytes sent for that file. The transfer queue turns that into a fraction over all of an item's files.
+- `DriveFolder` is `{ id, name }`. `listFolders` queries `mimeType = folder and trashed = false`, requests `files(id,name)`, reads one page (`pageSize` 1000), and sorts by name with `localeCompare`. `createFolder` POSTs folder metadata, requests `id,name`, and returns the same shape.
 - Cancellation: the `AbortSignal` passed to `uploadFile` goes to both the initiate request and the transport. If the signal is aborted before or during an attempt, the client throws `cancelled`, whatever the underlying error was.
 
 ### Things to Know
