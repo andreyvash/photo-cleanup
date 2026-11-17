@@ -1,7 +1,6 @@
 import type { DriveClient, DriveFolder, UploadFileArgs } from '@/drive/client';
 import { DriveError } from '@/drive/errors';
 import type { GoogleAccount, GoogleAuth } from '@/google/auth';
-import type { Exporter } from '@/transfer/queue';
 
 /** Stands in for Google's native sign-in sheet. */
 export class FakeGoogleAuth implements GoogleAuth {
@@ -48,7 +47,7 @@ export class FakeDriveClient implements DriveClient {
   }
 
   async createFolder(name: string) {
-    const folder = { id: `folder-${this.nextId++}`, name, createdTime: new Date().toISOString() };
+    const folder = { id: `folder-${this.nextId++}`, name };
     this.folders.push(folder);
     return folder;
   }
@@ -57,8 +56,8 @@ export class FakeDriveClient implements DriveClient {
     const failure = this.failures.get(filename);
     if (failure) throw failure;
     if (!this.folders.some((folder) => folder.id === folderId)) throw new DriveError('folderMissing');
-    onProgress?.(size / 2, size);
-    onProgress?.(size, size);
+    onProgress?.(size / 2);
+    onProgress?.(size);
     this.files.push({ name: filename, folderId, size });
     return { id: `file-${this.nextId++}` };
   }
@@ -66,17 +65,4 @@ export class FakeDriveClient implements DriveClient {
   namesIn(folderId: string) {
     return this.files.filter((file) => file.folderId === folderId).map((file) => file.name);
   }
-}
-
-/** Stands in for the native Photos export; produces one file per item named after it, instantly. */
-export class InstantExporter implements Exporter {
-  async exportForUpload(itemId: string, onProgress: (fraction: number) => void) {
-    onProgress(1);
-    return {
-      directory: `memory://${itemId}`,
-      files: [{ uri: `memory://${itemId}/${itemId}.HEIC`, filename: `${itemId}.HEIC`, mimeType: 'image/heic', size: 1_000 }],
-    };
-  }
-
-  async discard() {}
 }

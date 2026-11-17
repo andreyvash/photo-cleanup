@@ -26,5 +26,6 @@ export function createPhotoExporter(): Exporter {
       const exported = new Directory(directory);
       if (exported.exists) exported.delete();
     },
+    clearLeftovers: () => PhotoResources.clearExports(),
   };
 }

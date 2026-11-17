@@ -1,16 +1,10 @@
-import { fireEvent, renderRouter, screen, within } from 'expo-router/testing-library';
-import type { ReactNode } from 'react';
+import { fireEvent, screen, waitFor, within } from 'expo-router/testing-library';
 
-import { ServicesProvider } from '@/services';
-
+import { InstantExporter } from '../support/fakeExporter';
 import { FakePhotoLibrary, photo, video } from '../support/fakePhotoLibrary';
+import { renderApp as renderAppWith } from '../support/renderApp';
 
-function renderApp(library: FakePhotoLibrary) {
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <ServicesProvider services={{ photoLibrary: library }}>{children}</ServicesProvider>
-  );
-  return renderRouter('./src/app', { wrapper, initialUrl: '/' });
-}
+const renderApp = (library: FakePhotoLibrary) => renderAppWith({ photoLibrary: library });
 
 const tileLabels = () => screen.getAllByTestId('library-tile').map((tile) => tile.props.accessibilityLabel);
 
@@ -24,6 +18,14 @@ function standardLibrary() {
 }
 
 describe('Library screen', () => {
+  it('clears temporary copies a killed session left behind, at launch', async () => {
+    const exporter = new InstantExporter();
+
+    await renderAppWith({ photoLibrary: standardLibrary(), exporter });
+
+    await waitFor(() => expect(exporter.leftoversCleared).toBe(true));
+  });
+
   it('lists photos and videos largest first, with their sizes', async () => {
     await renderApp(standardLibrary());
 

@@ -1,33 +1,27 @@
 import { router } from 'expo-router';
-import { act, fireEvent, renderRouter, screen, waitFor, within } from 'expo-router/testing-library';
-import type { ReactNode } from 'react';
+import { act, fireEvent, screen, waitFor, within } from 'expo-router/testing-library';
 
 import { DriveError } from '@/drive/errors';
-import { ServicesProvider } from '@/services';
 
-import { FakeDriveClient, FakeGoogleAuth, InstantExporter } from '../support/fakeGoogle';
+import { InstantExporter } from '../support/fakeExporter';
+import { FakeDriveClient, FakeGoogleAuth } from '../support/fakeGoogle';
 import { FakePhotoLibrary, photo, video } from '../support/fakePhotoLibrary';
+import { pressSelectionBarButton, renderApp, selectTiles } from '../support/renderApp';
 
 type Setup = { signedInAs?: string | null; folders?: { id: string; name: string }[] };
 
 async function openSendFor(ids: string[], { signedInAs = 'me@example.com', folders = [] }: Setup = {}) {
   const library = new FakePhotoLibrary([photo('beach', 3_000_000), video('party', 40_000_000), photo('cat', 1_000_000)]);
   const googleAuth = new FakeGoogleAuth(signedInAs);
-  const drive = new FakeDriveClient(folders.map((f) => ({ ...f, createdTime: '2026-11-01T00:00:00Z' })));
+  const drive = new FakeDriveClient(folders);
   const exporter = new InstantExporter();
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <ServicesProvider services={{ photoLibrary: library, googleAuth, drive, exporter }}>{children}</ServicesProvider>
-  );
-  const app = await renderRouter('./src/app', { wrapper, initialUrl: '/' });
+  const app = await renderApp({ photoLibrary: library, googleAuth, drive, exporter });
   await screen.findByText('3 items · 44 MB');
 
-  const tiles = screen.getAllByTestId('library-tile');
   // Library is sorted largest first: party (40 MB), beach (3 MB), cat (1 MB).
   const order = ['party', 'beach', 'cat'];
-  for (const id of ids) {
-    await fireEvent.press(within(tiles[order.indexOf(id)]).getByRole('checkbox'));
-  }
-  await fireEvent.press(within(screen.getByTestId('selection-bar')).getByRole('button', { name: 'Send to Drive' }));
+  await selectTiles(ids.map((id) => order.indexOf(id)));
+  await pressSelectionBarButton('Send to Drive');
   return { app, library, googleAuth, drive, exporter };
 }
 

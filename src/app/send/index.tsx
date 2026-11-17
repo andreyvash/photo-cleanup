@@ -10,7 +10,7 @@ import { Thumbnail } from '@/components/thumbnail';
 import { formatCount } from '@/lib/format';
 import { useLibrary, useLibraryStore } from '@/library/library-store-provider';
 import { describeItems } from '@/library/selection';
-import { useSendSession, useTransferQueue } from '@/send/send-session';
+import { DRIVE_FOLDERS_KEY, useSendSession, useTransferQueue } from '@/send/send-session';
 import { useService } from '@/services';
 import { colors, spacing, tabularNumbers, type } from '@/theme';
 
@@ -25,8 +25,7 @@ export default function SendScreen() {
   const { selectedIds, sizes } = useLibrary(useShallow((s) => ({ selectedIds: s.selectedIds, sizes: s.sizes })));
   const session = useSendSession(
     useShallow((s) => ({
-      status: s.status,
-      account: s.account,
+      auth: s.auth,
       signingIn: s.signingIn,
       error: s.error,
       folderId: s.folderId,
@@ -36,10 +35,11 @@ export default function SendScreen() {
     })),
   );
 
+  const { auth } = session;
   const folders = useQuery({
-    queryKey: ['drive-folders', session.account?.email],
+    queryKey: [DRIVE_FOLDERS_KEY, auth.status === 'signedIn' ? auth.account.email : null],
     queryFn: () => drive.listFolders(),
-    enabled: session.status === 'signedIn',
+    enabled: auth.status === 'signedIn',
   });
   const folder = folders.data?.find((candidate) => candidate.id === session.folderId) ?? null;
 
@@ -66,9 +66,9 @@ export default function SendScreen() {
           <Text style={styles.summaryText}>{describeItems(selectedIds, sizes)}</Text>
         </View>
 
-        {session.status === 'checking' ? <ActivityIndicator style={styles.loading} /> : null}
+        {auth.status === 'checking' ? <ActivityIndicator style={styles.loading} /> : null}
 
-        {session.status === 'signedOut' ? (
+        {auth.status === 'signedOut' ? (
           <View style={styles.signIn}>
             <Text style={styles.body}>
               Sign in to choose a folder in your Google Drive. Photo Cleanup can only see folders it creates — not the
@@ -87,7 +87,7 @@ export default function SendScreen() {
           </View>
         ) : null}
 
-        {session.status === 'signedIn' ? (
+        {auth.status === 'signedIn' ? (
           <>
             <GroupedSection header="Folder" footer="Only folders created by Photo Cleanup are shown.">
               {folders.isPending ? <GroupedRow title="Loading folders…" /> : null}
@@ -116,14 +116,14 @@ export default function SendScreen() {
               />
             </GroupedSection>
 
-            <GroupedSection footer={`Signed in as ${session.account?.email}`}>
+            <GroupedSection footer={`Signed in as ${auth.account.email}`}>
               <GroupedRow title="Sign Out" titleColor={colors.accent} onPress={() => void session.signOut()} />
             </GroupedSection>
           </>
         ) : null}
       </ScrollView>
 
-      {session.status === 'signedIn' ? (
+      {auth.status === 'signedIn' ? (
         <View style={[styles.footer, { paddingBottom: insets.bottom + spacing.s }]}>
           <Text style={styles.footnote}>Copies go to Drive. Nothing is deleted from Photos.</Text>
           <Button

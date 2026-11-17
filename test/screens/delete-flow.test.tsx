@@ -1,9 +1,7 @@
-import { fireEvent, renderRouter, screen, within } from 'expo-router/testing-library';
-import type { ReactNode } from 'react';
-
-import { ServicesProvider } from '@/services';
+import { fireEvent, screen, within } from 'expo-router/testing-library';
 
 import { FakePhotoLibrary, photo, video } from '../support/fakePhotoLibrary';
+import { pressSelectionBarButton, renderApp, selectTiles } from '../support/renderApp';
 
 async function openDeleteReviewForTwoItems() {
   const library = new FakePhotoLibrary([
@@ -11,16 +9,12 @@ async function openDeleteReviewForTwoItems() {
     video('long-video', 25_800_000, 10),
     photo('large', 10_800_000),
   ]);
-  const wrapper = ({ children }: { children: ReactNode }) => (
-    <ServicesProvider services={{ photoLibrary: library }}>{children}</ServicesProvider>
-  );
-  const app = await renderRouter('./src/app', { wrapper, initialUrl: '/' });
+  const app = await renderApp({ photoLibrary: library });
   await screen.findByText('3 items · 37 MB');
 
-  const [videoTile, largeTile] = screen.getAllByTestId('library-tile');
-  await fireEvent.press(within(videoTile).getByRole('checkbox'));
-  await fireEvent.press(within(largeTile).getByRole('checkbox'));
-  await fireEvent.press(within(screen.getByTestId('selection-bar')).getByRole('button', { name: 'Delete' }));
+  // Largest first: the video, then the large photo.
+  await selectTiles([0, 1]);
+  await pressSelectionBarButton('Delete');
 
   return { app, library };
 }

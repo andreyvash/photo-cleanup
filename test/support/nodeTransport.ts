@@ -16,10 +16,6 @@ export const nodeTransport: UploadTransport = async ({ url, fileUri, headers, on
   const bytes = await readFile(fileURLToPath(fileUri));
   const response = await nodeFetch(url, { method: 'PUT', headers, body: new Uint8Array(bytes), signal });
   const body = await response.text();
-  onProgress(bytes.length, bytes.length);
-  const responseHeaders: Record<string, string> = {};
-  response.headers.forEach((value, key) => {
-    responseHeaders[key] = value;
-  });
-  return { status: response.status, headers: responseHeaders, body };
+  onProgress(bytes.length);
+  return { status: response.status, body };
 };

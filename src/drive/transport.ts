@@ -11,7 +11,7 @@ export const expoUploadTransport: UploadTransport = ({ url, fileUri, headers, on
     .createUploadTask(url, {
       httpMethod: 'PUT',
       headers,
-      onProgress: ({ bytesSent, totalBytes }) => onProgress(bytesSent, totalBytes),
+      onProgress: ({ bytesSent }) => onProgress(bytesSent),
       sessionType: 'background',
       signal,
     })

@@ -258,6 +258,7 @@ describe('transfer queue', () => {
         return exporter.exportForUpload(id, () => {});
       },
       discard: (directory) => exporter.discard(directory),
+      clearLeftovers: () => exporter.clearLeftovers(),
     };
     const queue = makeQueue(steppingExporter);
     const published: number[] = [];

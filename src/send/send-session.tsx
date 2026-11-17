@@ -9,9 +9,13 @@ import { useLibrary } from '@/library/library-store-provider';
 import { useService } from '@/services';
 import { createTransferQueue, sentItems, type TransferQueue, type TransferState } from '@/transfer/queue';
 
+/** Google Drive folder lists are cached under this query key, followed by the account's email. */
+export const DRIVE_FOLDERS_KEY = 'drive-folders';
+
+export type SendAuth = { status: 'checking' } | { status: 'signedOut' } | { status: 'signedIn'; account: GoogleAccount };
+
 export type SendSessionState = {
-  status: 'checking' | 'signedOut' | 'signedIn';
-  account: GoogleAccount | null;
+  auth: SendAuth;
   signingIn: boolean;
   error: string | null;
   /** The Drive folder the user picked for this send. */
@@ -24,24 +28,23 @@ export type SendSessionState = {
 
 function createSendSession(auth: GoogleAuth) {
   return createStore<SendSessionState>()((set) => ({
-    status: 'checking',
-    account: null,
+    auth: { status: 'checking' },
     signingIn: false,
     error: null,
     folderId: null,
     restore: async () => {
       try {
         const account = await auth.restore();
-        set({ status: account ? 'signedIn' : 'signedOut', account });
+        set({ auth: account ? { status: 'signedIn', account } : { status: 'signedOut' } });
       } catch {
-        set({ status: 'signedOut', account: null });
+        set({ auth: { status: 'signedOut' } });
       }
     },
     signIn: async () => {
       set({ signingIn: true, error: null });
       try {
         const account = await auth.signIn();
-        set(account ? { status: 'signedIn', account } : {});
+        if (account) set({ auth: { status: 'signedIn', account } });
       } catch (error) {
         set({ error: messageOf(error, 'Couldn’t sign in to Google.') });
       } finally {
@@ -50,7 +53,7 @@ function createSendSession(auth: GoogleAuth) {
     },
     signOut: async () => {
       await auth.signOut();
-      set({ status: 'signedOut', account: null, folderId: null });
+      set({ auth: { status: 'signedOut' }, folderId: null });
     },
     chooseFolder: (folderId) => set({ folderId }),
   }));

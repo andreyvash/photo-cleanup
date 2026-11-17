@@ -47,9 +47,6 @@ function isUserCancellation(error: unknown) {
 }
 
 export function createExpoPhotoLibrary(): PhotoLibrary {
-  // Created once at app launch, when no transfer can be running: remove exports left by a session that was killed.
-  void PhotoResources.clearExports();
-
   return {
     getPermission: async () => toPermission(await getPermissionsAsync()),
     requestPermission: async () => toPermission(await requestPermissionsAsync()),

@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { Button } from '@/components/button';
-import { useSendSession } from '@/send/send-session';
+import { messageOf } from '@/lib/errors';
+import { DRIVE_FOLDERS_KEY, useSendSession } from '@/send/send-session';
 import { useService } from '@/services';
 import { colors, radius, spacing, type } from '@/theme';
 
@@ -19,11 +20,15 @@ export default function NewFolderSheet() {
     mutationFn: (folderName: string) => drive.createFolder(folderName),
     onSuccess: async (folder) => {
       chooseFolder(folder.id);
-      await queryClient.invalidateQueries({ queryKey: ['drive-folders'] });
+      await queryClient.invalidateQueries({ queryKey: [DRIVE_FOLDERS_KEY] });
       router.back();
     },
   });
   const trimmed = name.trim();
+  const canCreate = trimmed.length > 0 && !create.isPending;
+  const submit = () => {
+    if (canCreate) create.mutate(trimmed);
+  };
 
   return (
     <View style={styles.container}>
@@ -34,17 +39,17 @@ export default function NewFolderSheet() {
         accessibilityLabel="Folder name"
         autoFocus
         returnKeyType="done"
-        onSubmitEditing={() => trimmed && !create.isPending && create.mutate(trimmed)}
+        onSubmitEditing={submit}
         maxLength={120}
         style={styles.input}
         placeholderTextColor={colors.tertiaryLabel}
       />
       {create.isError ? (
         <Text style={styles.error} accessibilityRole="alert">
-          {create.error instanceof Error ? create.error.message : 'Couldn’t create the folder.'}
+          {messageOf(create.error, 'Couldn’t create the folder.')}
         </Text>
       ) : null}
-      <Button title="Create" disabled={!trimmed || create.isPending} onPress={() => create.mutate(trimmed)} />
+      <Button title="Create" disabled={!canCreate} onPress={submit} />
     </View>
   );
 }

@@ -11,6 +11,8 @@ public class PhotoResourcesModule: Module {
 
     /// Total bytes of every resource PhotoKit keeps for each asset (photo, Live Photo video, edits).
     /// An id maps to null when the asset is missing or any resource has no readable size.
+    /// Runs on its own background queue: measuring a large library takes many batches, and Expo's shared queue for
+    /// async functions would make other modules' calls wait behind them.
     AsyncFunction("getSizes") { (ids: [String]) -> [String: Any] in
       var sizes: [String: Any] = [:]
       for id in ids {
@@ -23,7 +25,7 @@ public class PhotoResourcesModule: Module {
         }
       }
       return sizes
-    }
+    }.runOnQueue(Self.sizesQueue)
 
     /// Writes every file Photos keeps with the asset's media (the original, a RAW, a Live Photo's video, and the
     /// edited versions of each) into a fresh temporary directory, downloading from iCloud when needed.
@@ -73,6 +75,8 @@ public class PhotoResourcesModule: Module {
       try? FileManager.default.removeItem(at: Self.exportRoot)
     }
   }
+
+  static let sizesQueue = DispatchQueue(label: "photo-resources.sizes", qos: .utility)
 
   static var exportRoot: URL {
     FileManager.default.temporaryDirectory.appendingPathComponent("photo-resources", isDirectory: true)

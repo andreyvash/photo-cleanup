@@ -53,12 +53,11 @@ describe('listFolders', () => {
 
     const folders = await connect().listFolders();
 
-    expect(folders.map(({ id, name }) => ({ id, name }))).toEqual([
+    expect(folders).toEqual([
       { id: archive, name: 'Archive' },
       { id: backups, name: 'Backups' },
       { id: vacation, name: 'Vacation' },
     ]);
-    expect(folders.every((folder) => !Number.isNaN(Date.parse(folder.createdTime)))).toBe(true);
   });
 });
 
@@ -76,7 +75,7 @@ describe('createFolder', () => {
 describe('uploadFile', () => {
   it('puts the whole file into the folder and reports progress up to its size', async () => {
     const folderId = drive.addFolder('Backups');
-    const progress: [number, number][] = [];
+    const progress: number[] = [];
 
     const { id } = await connect().uploadFile({
       fileUri: await localFile('IMG_0001.HEIC', 300_000),
@@ -84,11 +83,11 @@ describe('uploadFile', () => {
       mimeType: 'image/heic',
       size: 300_000,
       folderId,
-      onProgress: (sent, total) => progress.push([sent, total]),
+      onProgress: (sent) => progress.push(sent),
     });
 
     expect(drive.filesIn(folderId)).toEqual([{ id, name: 'IMG_0001.HEIC', mimeType: 'image/heic', size: 300_000 }]);
-    expect(progress.at(-1)).toEqual([300_000, 300_000]);
+    expect(progress.at(-1)).toBe(300_000);
   });
 
   it('counts a 200 from Drive as uploaded even when the body is not JSON, and does not upload again', async () => {

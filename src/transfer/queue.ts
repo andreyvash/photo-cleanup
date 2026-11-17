@@ -11,6 +11,8 @@ export type Exporter = {
   exportForUpload(itemId: string, onProgress: (fraction: number) => void): Promise<{ directory: string; files: ExportedFile[] }>;
   /** Deletes the temp directory. */
   discard(directory: string): Promise<void>;
+  /** Deletes every temp directory, e.g. those of a session that was killed. Only safe while nothing is exporting. */
+  clearLeftovers(): Promise<void>;
 };
 
 export type TransferItem = { id: string; filename: string | null; size: number | null };

@@ -23,7 +23,7 @@ export class FakeExporter implements Exporter {
     return new FakeExporter(await mkdtemp(join(tmpdir(), 'photo-resources-')));
   }
 
-  /** An asset in the photo library and the files it exports to (a Live Photo has two). */
+  /** An asset in the photo library and the files it exports to (one or more). */
   addAsset(id: string, files: AssetFile[]): void {
     this.assets.set(id, files);
   }
@@ -67,6 +67,31 @@ export class FakeExporter implements Exporter {
 
   async discard(directory: string): Promise<void> {
     await rm(directory, { recursive: true, force: true });
+  }
+
+  async clearLeftovers(): Promise<void> {
+    for (const name of await readdir(this.root)) {
+      await rm(join(this.root, name), { recursive: true, force: true });
+    }
+  }
+}
+
+/** For screen tests: exports one file per item, named after it, instantly and without touching the disk. */
+export class InstantExporter implements Exporter {
+  leftoversCleared = false;
+
+  async exportForUpload(itemId: string, onProgress: (fraction: number) => void) {
+    onProgress(1);
+    return {
+      directory: `memory://${itemId}`,
+      files: [{ uri: `memory://${itemId}/${itemId}.HEIC`, filename: `${itemId}.HEIC`, mimeType: 'image/heic', size: 1_000 }],
+    };
+  }
+
+  async discard(): Promise<void> {}
+
+  async clearLeftovers(): Promise<void> {
+    this.leftoversCleared = true;
   }
 }
 

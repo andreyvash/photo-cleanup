@@ -1,6 +1,6 @@
 import { DriveError } from './errors';
 
-export type DriveFolder = { id: string; name: string; createdTime: string };
+export type DriveFolder = { id: string; name: string };
 
 export type UploadTransport = (request: {
   /** Resumable session URL. */
@@ -8,9 +8,9 @@ export type UploadTransport = (request: {
   /** file:// URI of a local file. */
   fileUri: string;
   headers: Record<string, string>;
-  onProgress: (bytesSent: number, totalBytes: number) => void;
+  onProgress: (bytesSent: number) => void;
   signal?: AbortSignal;
-}) => Promise<{ status: number; headers: Record<string, string>; body: string }>;
+}) => Promise<{ status: number; body: string }>;
 
 export type DriveClientOptions = {
   /** Returns a valid token (Google Sign-In refreshes it). Called before every request. */
@@ -29,7 +29,7 @@ export type UploadFileArgs = {
   mimeType: string;
   size: number;
   folderId: string;
-  onProgress?: (bytesSent: number, totalBytes: number) => void;
+  onProgress?: (bytesSent: number) => void;
   signal?: AbortSignal;
 };
 
@@ -119,7 +119,7 @@ export function createDriveClient(options: DriveClientOptions): DriveClient {
     async listFolders() {
       const query = queryString({
         q: `mimeType = ${quote(FOLDER_MIME_TYPE)} and trashed = false`,
-        fields: 'files(id,name,createdTime)',
+        fields: 'files(id,name)',
         pageSize: '1000',
       });
       const { files = [] } = await requestJson<{ files?: DriveFolder[] }>(`${baseUrl}/drive/v3/files?${query}`);
@@ -127,7 +127,7 @@ export function createDriveClient(options: DriveClientOptions): DriveClient {
     },
 
     async createFolder(name) {
-      return requestJson<DriveFolder>(`${baseUrl}/drive/v3/files?${queryString({ fields: 'id,name,createdTime' })}`, {
+      return requestJson<DriveFolder>(`${baseUrl}/drive/v3/files?${queryString({ fields: 'id,name' })}`, {
         method: 'POST',
         body: JSON.stringify({ name, mimeType: FOLDER_MIME_TYPE }),
       });
